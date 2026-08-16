@@ -1,10 +1,8 @@
 # @deepseek-ai/dsh-visual-studio
 
-Visual HTML/SVG Studio — a persistent DeepSeek Harness **web plugin** that opens,
-creates, previews, and saves workspace HTML/SVG files, with an element inspector
-and agent-routed annotations.
-
 ## 中文介绍
+
+[英文](#english)
 
 Visual HTML/SVG Studio（可视化 HTML/SVG 工作室）是一个持久化的 DeepSeek Harness 网页插件：在浏览器里打开、新建、实时预览并保存工作区内的 HTML/SVG 文件，支持「元素检查」与「手动批注」，批注会直接送回当前 Agent 会话，由 AI 精确修改源码。
 
@@ -35,6 +33,12 @@ dsh plugin --profile web add <本仓库路径>
 安装后重启 `dsh web`，右下角会出现 Visual Studio 浮动面板。示例见 `examples/demo.html` 与 `examples/demo.svg`。
 
 ---
+
+## English
+
+Visual HTML/SVG Studio — a persistent DeepSeek Harness **web plugin** that opens,
+creates, previews, and saves workspace HTML/SVG files, with an element inspector
+and agent-routed annotations.
 
 ## Features
 
