@@ -2,6 +2,16 @@
   "name": "@deepseek-ai/dsh-visual-studio",
   "description": "Visual HTML/SVG Studio — a persistent DeepSeek Harness web plugin for opening, previewing, inspecting, and annotating workspace HTML/SVG files",
   "version": "0.1.0",
+  "keywords": [
+    "deepseek-harness",
+    "plugin",
+    "web-plugin",
+    "cordis",
+    "html",
+    "svg",
+    "visual-studio",
+    "annotation"
+  ],
   "publishConfig": {
     "access": "public"
   },
