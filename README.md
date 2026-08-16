@@ -4,6 +4,38 @@ Visual HTML/SVG Studio — a persistent DeepSeek Harness **web plugin** that ope
 creates, previews, and saves workspace HTML/SVG files, with an element inspector
 and agent-routed annotations.
 
+## 中文介绍
+
+Visual HTML/SVG Studio（可视化 HTML/SVG 工作室）是一个持久化的 DeepSeek Harness 网页插件：在浏览器里打开、新建、实时预览并保存工作区内的 HTML/SVG 文件，支持「元素检查」与「手动批注」，批注会直接送回当前 Agent 会话，由 AI 精确修改源码。
+
+### 功能特性
+
+- **打开 / 新建 / 保存** 工作区内的 `.html` / `.htm` / `.svg` 文件。
+- **实时预览**：源码编辑器旁是隔离 iframe 预览（`sandbox="allow-scripts"`、无 `allow-same-origin`，预览脚本运行在独立源，无法访问父页面 DOM / Cookie）。
+- **元素检查模式**：在预览中点击任意 HTML/SVG 元素，显示选框、元素路径、稳定 selector、尺寸与主要 computed styles。
+- **手动批注**：对选中元素或页面坐标添加批注（如「这里间距太大」「这个图标不对」），提交后连同文件路径、selector、元素 HTML/SVG、computed styles、位置尺寸与批注文字一起送回当前 Agent 会话。
+- **自动刷新 + 状态保留**：Agent 修改源码后自动刷新预览，批注的「已处理 / 未处理」状态保留。
+- **撤销 / 重做 / 保存 / 刷新 / 桌面-手机视口切换**。
+- **版本备份**：覆盖文件前把旧内容写到同目录 `.dsh-visual-studio-backup-<时间戳>`，可恢复。
+
+### 快速开始
+
+```sh
+# 构建
+corepack pnpm install
+corepack pnpm run build   # tsc -b && tsdown
+
+# 测试
+corepack pnpm test
+
+# 安装到当前 web profile（重启后仍存在）
+dsh plugin --profile web add <本仓库路径>
+```
+
+安装后重启 `dsh web`，右下角会出现 Visual Studio 浮动面板。示例见 `examples/demo.html` 与 `examples/demo.svg`。
+
+---
+
 ## Features
 
 - **Open / new / save** workspace `.html` / `.htm` / `.svg` files.

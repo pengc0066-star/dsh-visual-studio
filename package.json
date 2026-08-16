@@ -7,7 +7,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ppc/dsh-visual-studio.git"
+    "url": "git+https://github.com/pengc0066-star/dsh-visual-studio.git"
   },
   "type": "module",
   "main": "lib/index.js",
