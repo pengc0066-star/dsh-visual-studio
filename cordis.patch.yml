@@ -1,0 +1,8 @@
+# The Visual HTML/SVG Studio bundle patch: inserts the dual-face plugin row
+# (host node half serves the /visual-studio file RPC; browser half mounts the
+# studio overlay). The same package carries both `dsh.client` (browser roster)
+# and `dsh.bundle` (this patch layer), so `dsh plugin add` reconciles it into
+# `dsh.profile.bundles` and the row reaches window.__DSH_BOOT__ on boot.
+- insert:
+    - id: visual-studio
+      name: '@deepseek-ai/dsh-visual-studio'

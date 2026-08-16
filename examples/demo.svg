@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="320" viewBox="0 0 480 320">
+  <rect id="bg" x="0" y="0" width="480" height="320" rx="12" fill="#0f172a" />
+  <circle id="sun" cx="360" cy="90" r="46" fill="#fbbf24" />
+  <rect id="bar-1" x="40" y="220" width="60" height="80" rx="6" fill="#5b8def" />
+  <rect id="bar-2" x="120" y="180" width="60" height="120" rx="6" fill="#7c9df0" />
+  <rect id="bar-3" x="200" y="140" width="60" height="160" rx="6" fill="#a4bdf4" />
+  <rect id="bar-4" x="280" y="100" width="60" height="200" rx="6" fill="#c9d8f8" />
+  <text id="title" x="40" y="60" font-family="system-ui, sans-serif" font-size="28" fill="#ffffff">SVG 示例图表</text>
+  <text id="caption" x="40" y="92" font-family="system-ui, sans-serif" font-size="14" fill="#94a3b8">点击任意柱状图元素进行批注</text>
+</svg>
