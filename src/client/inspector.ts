@@ -2,7 +2,8 @@
  * The sandboxed-preview inspector script and the srcdoc wrapper. The script is
  * a self-contained string injected into every preview document; it runs inside
  * the sandboxed iframe (unique origin, no parent DOM/cookie access) and talks
- * to the parent only through `postMessage`.
+ * to the parent only through `postMessage`. The wrapper centers previewed
+ * content on a light checkerboard canvas so a tiny SVG does not appear broken.
  * @module @deepseek-ai/dsh-visual-studio/client/inspector
  */
 
@@ -18,10 +19,13 @@ export const QUERY_REQUEST = 'vs:query'
 /** Selector-query reply the preview posts back. */
 export const QUERY_REPLY = 'vs:query-result'
 
+/** Zoom request the parent posts to scale the preview canvas. */
+export const ZOOM_EVENT = 'vs:zoom'
+
 /**
  * The inspector script body, wrapped in a `<script>` tag by {@link previewDocument}.
  * It computes a stable selector and breadcrumb for the clicked element, keeps a
- * highlight overlay, and reports through `postMessage`.
+ * highlight overlay, applies the canvas zoom, and reports through `postMessage`.
  */
 const INSPECTOR_SCRIPT = `
 (function () {
@@ -137,6 +141,8 @@ const INSPECTOR_SCRIPT = `
         highlight.remove()
         highlight = null
       }
+    } else if (data.type === '${ZOOM_EVENT}') {
+      document.documentElement.style.setProperty('--vs-zoom', String(data.scale ?? 1))
     } else if (data.type === '${QUERY_REQUEST}') {
       var match = false
       try { match = !!document.querySelector(data.selector) } catch (e) { match = false }
@@ -149,10 +155,35 @@ const INSPECTOR_SCRIPT = `
 })()
 `
 
+/** The centered-canvas styles applied to fragment previews. */
+const CANVAS_CSS = `
+  :root { --vs-zoom: 1; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    background: repeating-conic-gradient(#f1f2f5 0% 25%, #e7e9ee 0% 50%) 0 0 / 20px 20px;
+  }
+  #vs-stage {
+    transform: scale(var(--vs-zoom));
+    transform-origin: center center;
+    background: #ffffff;
+    box-shadow: 0 1px 10px rgba(0, 0, 0, 0.10);
+  }
+`
+
+/** Checkerboard background style injected into full-document previews. */
+const FULL_DOC_STYLE = `<style>html,body{margin:0;padding:0;background:repeating-conic-gradient(#f1f2f5 0% 25%, #e7e8ed 0% 50%) 0 0/20px 20px;}</style>`
+
 /**
  * Build the sandboxed preview `srcdoc`: the source content plus the inspector
- * script. Full documents get the script appended before `</body>` (or at the
- * end); fragments (including standalone SVG) are wrapped in a minimal document.
+ * script. Fragments (including standalone SVG) are centered on a light
+ * checkerboard canvas; full documents keep their own layout and only gain the
+ * canvas background. The user's content is never rewritten.
  * @param content - the HTML/SVG source text.
  * @returns the srcdoc string.
  */
@@ -165,7 +196,11 @@ export function previewDocument(content: string): string {
     if (bodyClose !== null) {
       return `${content.slice(0, bodyClose.index)}${scriptTag}${content.slice(bodyClose.index)}`
     }
+    const headClose = /<\/head\s*>/i.exec(content)
+    if (headClose !== null) {
+      return `${content.slice(0, headClose.index)}${FULL_DOC_STYLE}${content.slice(headClose.index)}${scriptTag}`
+    }
     return `${content}${scriptTag}`
   }
-  return `<!doctype html><html><head><meta charset="utf-8"></head><body>${content}${scriptTag}</body></html>`
+  return `<!doctype html><html><head><meta charset="utf-8"><style>${CANVAS_CSS}</style></head><body><div id="vs-stage">${content}</div>${scriptTag}</body></html>`
 }

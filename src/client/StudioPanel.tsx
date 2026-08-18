@@ -1,17 +1,18 @@
 /**
- * The Visual HTML/SVG Studio panel: workspace file picker, source editor,
- * sandboxed live preview, element inspector, annotations, undo/redo, and
- * desktop/mobile viewport switch. The component is a pure props consumer — all
- * host I/O and session routing arrive through the {@link StudioInjected} face
- * from the plugin apply closure.
+ * The Visual HTML/SVG Studio panel: workspace file picker, source editor with
+ * line numbers and highlighting, sandboxed centered preview, element inspector,
+ * annotations, undo/redo, and desktop/mobile viewport switch. The component is
+ * a pure props consumer — all host I/O and session routing arrive through the
+ * {@link StudioInjected} face from the plugin apply closure.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionListState, WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
+import { CodeEditor } from './CodeEditor.tsx'
 import { formatAnnotationMessage } from './studio.ts'
 import type { Annotation, InspectPayload, StudioInjected } from './studio.ts'
-import { INSPECT_EVENT, INSPECT_TOGGLE, previewDocument } from './inspector.ts'
+import { INSPECT_EVENT, INSPECT_TOGGLE, ZOOM_EVENT, previewDocument } from './inspector.ts'
 import styles from './StudioPanel.module.css'
 
 /** Component props: the injected file/session face plus the global standard kit. */
@@ -28,6 +29,9 @@ const EDIT_DEBOUNCE_MS = 500
 
 /** Local-storage key keeping annotation state across page reloads. */
 const ANNOTATIONS_KEY = 'dsh.visual-studio.annotations'
+
+/** Preview zoom presets. */
+const ZOOM_OPTIONS = [0.25, 0.5, 1, 1.5, 2]
 
 /** Build a child absolute path by joining a name onto a workspace root. */
 function joinPath(root: string, name: string): string {
@@ -65,6 +69,7 @@ export function StudioPanel(props: StudioPanelProps) {
   const cwd = useSessions(s => (s.current === undefined ? undefined : s.byId[s.current]?.cwd))
 
   const [collapsed, setCollapsed] = useState(false)
+  const [codeCollapsed, setCodeCollapsed] = useState(false)
   const [files, setFiles] = useState<string[]>([])
   const [currentFile, setCurrentFile] = useState<string | null>(null)
   const [content, setContent] = useState('')
@@ -74,6 +79,7 @@ export function StudioPanel(props: StudioPanelProps) {
   const [historyIndex, setHistoryIndex] = useState(-1)
   const [selected, setSelected] = useState<InspectPayload | null>(null)
   const [inspectMode, setInspectMode] = useState(false)
+  const [zoom, setZoom] = useState(1)
   const [viewport, setViewport] = useState<'desktop' | 'mobile'>('desktop')
   const [annotations, setAnnotations] = useState<Annotation[]>(loadAnnotations)
   const [note, setNote] = useState('')
@@ -83,6 +89,15 @@ export function StudioPanel(props: StudioPanelProps) {
   const editTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const srcdoc = useMemo(() => previewDocument(preview), [preview])
+
+  const postToFrame = useCallback((message: unknown) => {
+    iframeRef.current?.contentWindow?.postMessage(message, '*')
+  }, [])
+
+  const applyFrameState = useCallback(() => {
+    postToFrame({ type: INSPECT_TOGGLE, enabled: inspectMode })
+    postToFrame({ type: ZOOM_EVENT, scale: zoom })
+  }, [inspectMode, zoom, postToFrame])
 
   // Persist annotations on every change.
   useEffect(() => {
@@ -252,14 +267,18 @@ export function StudioPanel(props: StudioPanelProps) {
     return () => window.removeEventListener('message', onMessage)
   }, [])
 
-  // Push the inspect toggle into the preview iframe (and re-apply after load).
-  useEffect(() => {
-    iframeRef.current?.contentWindow?.postMessage({ type: INSPECT_TOGGLE, enabled: inspectMode }, '*')
-  }, [inspectMode, srcdoc])
+  const toggleInspect = useCallback(() => {
+    setInspectMode(prev => {
+      const next = !prev
+      postToFrame({ type: INSPECT_TOGGLE, enabled: next })
+      return next
+    })
+  }, [postToFrame])
 
-  const applyInspectToggle = useCallback(() => {
-    iframeRef.current?.contentWindow?.postMessage({ type: INSPECT_TOGGLE, enabled: inspectMode }, '*')
-  }, [inspectMode])
+  const changeZoom = useCallback((next: number) => {
+    setZoom(next)
+    postToFrame({ type: ZOOM_EVENT, scale: next })
+  }, [postToFrame])
 
   const toggleStatus = useCallback((id: string) => {
     setAnnotations(prev => prev.map(a => a.id === id
@@ -269,8 +288,19 @@ export function StudioPanel(props: StudioPanelProps) {
 
   if (collapsed) {
     return (
-      <button type="button" className={styles.reopen} onClick={() => setCollapsed(false)}>
-        Visual Studio
+      <button
+        type="button"
+        className={styles.reopen}
+        data-tooltip="Visual HTML/SVG Studio"
+        aria-label="打开 Visual HTML/SVG Studio"
+        onClick={() => setCollapsed(false)}
+      >
+        <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden fill="none">
+          <rect x="2.5" y="2.5" width="6" height="6" rx="1.5" stroke="currentColor" />
+          <rect x="11.5" y="2.5" width="6" height="6" rx="1.5" stroke="currentColor" />
+          <rect x="2.5" y="11.5" width="6" height="6" rx="1.5" stroke="currentColor" />
+          <rect x="11.5" y="11.5" width="6" height="6" rx="1.5" stroke="currentColor" fill="currentColor" />
+        </svg>
       </button>
     )
   }
@@ -280,49 +310,107 @@ export function StudioPanel(props: StudioPanelProps) {
   return (
     <div className={styles.panel}>
       <div className={styles.toolbar}>
-        <span className={styles.title}>Visual HTML/SVG Studio</span>
-        <select
-          className={styles.select}
-          value={currentFile ?? ''}
-          onChange={event => { if (event.target.value !== '') void openFile(event.target.value) }}
-        >
-          <option value="" disabled>选择文件…</option>
-          {files.map(file => (
-            <option key={file} value={file}>{shorten(cwd, file)}</option>
-          ))}
-        </select>
-        <button type="button" className={styles.button} onClick={createNew}>新建</button>
-        <button type="button" className={styles.button} onClick={save} disabled={currentFile === null || !isDirty}>保存</button>
-        <button type="button" className={styles.button} onClick={refresh} disabled={currentFile === null}>刷新</button>
-        <button type="button" className={styles.button} onClick={undo} disabled={historyIndex <= 0}>撤销</button>
-        <button type="button" className={styles.button} onClick={redo} disabled={historyIndex >= history.length - 1}>重做</button>
-        <button
-          type="button"
-          className={inspectMode ? styles.buttonActive : styles.button}
-          onClick={() => setInspectMode(v => !v)}
-        >
-          {inspectMode ? '检查中' : '元素检查'}
-        </button>
-        <button
-          type="button"
-          className={viewport === 'mobile' ? styles.buttonActive : styles.button}
-          onClick={() => setViewport(v => (v === 'desktop' ? 'mobile' : 'desktop'))}
-        >
-          {viewport === 'desktop' ? '桌面' : '手机'}
-        </button>
-        <button type="button" className={styles.button} onClick={() => setCollapsed(true)}>收起</button>
+        <span className={styles.title}>Visual Studio</span>
+
+        <div className={styles.toolbarGroup}>
+          <select
+            className={styles.select}
+            value={currentFile ?? ''}
+            aria-label="选择文件"
+            onChange={event => { if (event.target.value !== '') void openFile(event.target.value) }}
+          >
+            <option value="" disabled>选择文件…</option>
+            {files.map(file => (
+              <option key={file} value={file}>{shorten(cwd, file)}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className={styles.toolbarDivider} />
+
+        <div className={styles.toolbarGroup}>
+          <button type="button" className={styles.btn} onClick={createNew}>新建</button>
+          <button type="button" className={styles.btn} onClick={save} disabled={currentFile === null || !isDirty}>保存</button>
+          <button type="button" className={styles.btn} onClick={refresh} disabled={currentFile === null}>刷新</button>
+        </div>
+
+        <div className={styles.toolbarDivider} />
+
+        <div className={styles.toolbarGroup}>
+          <button type="button" className={styles.btn} onClick={undo} disabled={historyIndex <= 0}>撤销</button>
+          <button type="button" className={styles.btn} onClick={redo} disabled={historyIndex >= history.length - 1}>重做</button>
+        </div>
+
+        <div className={styles.spacer} />
+
+        <div className={styles.toolbarGroup}>
+          <button
+            type="button"
+            className={styles.iconBtn}
+            data-tooltip={codeCollapsed ? '展开代码' : '折叠代码'}
+            aria-label={codeCollapsed ? '展开代码' : '折叠代码'}
+            onClick={() => setCodeCollapsed(v => !v)}
+          >
+            {codeCollapsed ? '⟩' : '⟨'}
+          </button>
+          <button
+            type="button"
+            className={inspectMode ? styles.btnActive : styles.btn}
+            onClick={toggleInspect}
+          >
+            {inspectMode ? '检查中' : '元素检查'}
+          </button>
+          <button
+            type="button"
+            className={viewport === 'mobile' ? styles.btnActive : styles.btn}
+            data-tooltip={viewport === 'desktop' ? '切换到手机视口' : '切换到桌面视口'}
+            onClick={() => setViewport(v => (v === 'desktop' ? 'mobile' : 'desktop'))}
+          >
+            {viewport === 'desktop' ? '桌面' : '手机'}
+          </button>
+          <select
+            className={styles.select}
+            style={{ flex: 'none', minWidth: 72 }}
+            value={String(zoom)}
+            aria-label="预览缩放"
+            onChange={event => changeZoom(Number(event.target.value))}
+          >
+            {ZOOM_OPTIONS.map(scale => (
+              <option key={scale} value={scale}>{`${Math.round(scale * 100)}%`}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className={styles.iconBtn}
+            data-tooltip="收起面板"
+            aria-label="收起面板"
+            onClick={() => setCollapsed(true)}
+          >
+            ×
+          </button>
+        </div>
       </div>
 
       {error !== null && <div className={styles.error}>{error}</div>}
 
       <div className={styles.body}>
-        <div className={styles.editor}>
-          <textarea
-            value={content}
-            onChange={event => onEdit(event.target.value)}
-            spellCheck={false}
-            placeholder="在此编辑 HTML/SVG 源码，或在左侧选择文件"
-          />
+        <div className={codeCollapsed ? `${styles.codePane} ${styles.codePaneCollapsed}` : styles.codePane}>
+          {codeCollapsed ? (
+            <div className={styles.codeRail}>
+              <button
+                type="button"
+                className={styles.iconBtn}
+                data-tooltip="展开代码"
+                aria-label="展开代码"
+                onClick={() => setCodeCollapsed(false)}
+              >
+                ⟩
+              </button>
+              <span className={styles.kvLabel} style={{ writingMode: 'vertical-rl' }}>代码</span>
+            </div>
+          ) : (
+            <CodeEditor value={content} onChange={onEdit} placeholder="在此编辑 HTML/SVG 源码，或在上方选择文件" />
+          )}
         </div>
 
         <div className={`${styles.preview} ${viewport === 'mobile' ? styles.mobile : ''}`}>
@@ -331,21 +419,21 @@ export function StudioPanel(props: StudioPanelProps) {
             title="Visual Studio preview"
             sandbox="allow-scripts"
             srcDoc={srcdoc}
-            onLoad={applyInspectToggle}
+            onLoad={applyFrameState}
           />
         </div>
 
-        <aside className={styles.side}>
+        <aside className={styles.inspector}>
           <div className={styles.section}>
             <div className={styles.sectionTitle}>元素检查</div>
             {selected === null ? (
-              <div className={styles.kv}>在预览中开启“元素检查”后点击任意元素</div>
+              <div className={styles.kv}>在预览中开启「元素检查」后点击任意元素</div>
             ) : (
               <>
-                <div className={styles.kv}>标签: {selected.tag}</div>
-                <div className={styles.kv}>路径: {selected.path}</div>
-                <div className={styles.kv}>Selector: {selected.selector}</div>
-                <div className={styles.kv}>尺寸: {selected.rect.width}×{selected.rect.height}</div>
+                <div className={styles.kv}><span className={styles.kvLabel}>标签 </span>{selected.tag}</div>
+                <div className={styles.kv}><span className={styles.kvLabel}>路径 </span>{selected.path}</div>
+                <div className={styles.kv}><span className={styles.kvLabel}>Selector </span>{selected.selector}</div>
+                <div className={styles.kv}><span className={styles.kvLabel}>尺寸 </span>{selected.rect.width}×{selected.rect.height}</div>
               </>
             )}
           </div>
@@ -361,7 +449,7 @@ export function StudioPanel(props: StudioPanelProps) {
             />
             <button
               type="button"
-              className={styles.button}
+              className={styles.btnPrimary}
               onClick={() => void submitNote()}
               disabled={currentFile === null || sessionId === undefined || note.trim() === ''}
             >
@@ -382,7 +470,7 @@ export function StudioPanel(props: StudioPanelProps) {
                   {shorten(cwd, annotation.filePath)}
                   {annotation.selector !== '' ? ` · ${annotation.selector}` : ''}
                 </div>
-                <button type="button" className={styles.button} onClick={() => toggleStatus(annotation.id)}>
+                <button type="button" className={styles.btn} onClick={() => toggleStatus(annotation.id)}>
                   {annotation.status === 'pending' ? '标记已处理' : '标记未处理'}
                 </button>
               </div>
