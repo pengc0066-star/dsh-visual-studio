@@ -233,7 +233,7 @@
 }
 
 .codeDivider {
-  flex: 0 0 20px;
+  flex: 0 0 32px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -245,15 +245,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 34px;
+  width: 28px;
+  height: 40px;
   padding: 0;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--vs-text-caption);
+  border: 1px solid var(--vs-border);
+  border-radius: 7px;
+  background: var(--vs-bg);
+  color: var(--vs-text-secondary);
   cursor: pointer;
-  font-size: 12px;
 }
 
 .dividerBtn:hover {
@@ -481,6 +480,17 @@
   .statusProcessed { color: #7ccf92; }
 }
 
+.emptyState {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  text-align: center;
+  color: var(--vs-text-caption);
+  font-size: 13px;
+}
+
 .noteInput {
   width: 100%;
   box-sizing: border-box;
@@ -510,11 +520,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
+  margin-left: 8px;
   padding: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: var(--vs-text-secondary);
   cursor: pointer;

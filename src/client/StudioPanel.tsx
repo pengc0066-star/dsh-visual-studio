@@ -317,11 +317,6 @@ export function StudioPanel(props: StudioPanelProps) {
                 <option key={file} value={file}>{shorten(cwd, file)}</option>
               ))}
             </select>
-          </div>
-
-          <div className={styles.toolbarDivider} />
-
-          <div className={styles.toolbarGroup}>
             <button type="button" className={styles.btn} onClick={createNew}>新建</button>
             <button type="button" className={styles.btn} onClick={save} disabled={currentFile === null || !isDirty}>保存</button>
             <button type="button" className={styles.btn} onClick={refresh} disabled={currentFile === null}>刷新</button>
@@ -333,6 +328,8 @@ export function StudioPanel(props: StudioPanelProps) {
             <button type="button" className={styles.btn} onClick={undo} disabled={historyIndex <= 0}>撤销</button>
             <button type="button" className={styles.btn} onClick={redo} disabled={historyIndex >= history.length - 1}>重做</button>
           </div>
+
+          <div className={styles.toolbarDivider} />
 
           <div className={styles.spacer} />
 
@@ -379,7 +376,9 @@ export function StudioPanel(props: StudioPanelProps) {
 
         <div className={styles.body}>
           <div className={codeCollapsed ? `${styles.codePane} ${styles.codePaneCollapsed}` : styles.codePane}>
-            {!codeCollapsed && <CodeEditor value={content} onChange={onEdit} placeholder="在此编辑 HTML/SVG 源码，或在上方选择文件" />}
+            {!codeCollapsed && (currentFile === null
+              ? <div className={styles.emptyState}>选择文件后在此编辑源码</div>
+              : <CodeEditor value={content} onChange={onEdit} placeholder="在此编辑 HTML/SVG 源码" />)}
           </div>
 
           <div className={styles.codeDivider}>
@@ -390,18 +389,34 @@ export function StudioPanel(props: StudioPanelProps) {
               aria-label={codeCollapsed ? '展开代码' : '折叠代码'}
               onClick={() => setCodeCollapsed(v => !v)}
             >
-              {codeCollapsed ? '⟩' : '⟨'}
+              {codeCollapsed ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M9 3v18" />
+                  <path d="m14 9 3 3-3 3" />
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M9 3v18" />
+                  <path d="m16 15-3-3 3-3" />
+                </svg>
+              )}
             </button>
           </div>
 
           <div className={`${styles.preview} ${viewport === 'mobile' ? styles.mobile : ''}`}>
-            <iframe
-              ref={iframeRef}
-              title="Visual Studio preview"
-              sandbox="allow-scripts"
-              srcDoc={srcdoc}
-              onLoad={applyFrameState}
-            />
+            {currentFile === null
+              ? <div className={styles.emptyState}>选择文件后在此预览</div>
+              : (
+                <iframe
+                  ref={iframeRef}
+                  title="Visual Studio preview"
+                  sandbox="allow-scripts"
+                  srcDoc={srcdoc}
+                  onLoad={applyFrameState}
+                />
+              )}
           </div>
 
           <aside className={styles.inspector}>
@@ -425,21 +440,21 @@ export function StudioPanel(props: StudioPanelProps) {
                 className={styles.noteInput}
                 value={note}
                 onChange={event => setNote(event.target.value)}
-                placeholder={selected === null ? '例如：这里间距太大' : `针对 ${selected.tag} 的批注…`}
+                placeholder={selected === null ? '先在预览中选中元素，再输入批注' : `针对 ${selected.tag} 的批注…`}
                 rows={3}
               />
               <button
                 type="button"
                 className={`${styles.btn} ${styles.btnPrimary}`}
                 onClick={() => void submitNote()}
-                disabled={note.trim() === ''}
+                disabled={currentFile === null || selected === null || note.trim() === ''}
               >
                 提交给 Agent
               </button>
             </div>
 
             <div className={styles.section}>
-              <div className={styles.sectionTitle}>批注（{annotations.length}）</div>
+              <div className={styles.sectionTitle}>历史批注（{annotations.length}）</div>
               {annotations.length === 0 && <div className={styles.kv}>暂无批注</div>}
               {annotations.map(annotation => (
                 <div key={annotation.id} className={styles.annotation}>
