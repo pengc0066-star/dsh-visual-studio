@@ -59,6 +59,24 @@ export interface StudioInjected {
   submitAnnotation(sessionId: string, text: string): Promise<boolean>
 }
 
+/**
+ * Shared open-state source for the Studio panel and its composer entry button.
+ * It satisfies the renderer's `HostObservable<boolean>` face (getSnapshot +
+ * subscribe) while carrying the toggle/set verbs the registrants call.
+ */
+export interface OpenController {
+  getSnapshot(): boolean
+  subscribe(listener: () => void): () => void
+  toggle(): void
+  setOpen(open: boolean): void
+}
+
+/** The panel's inject face: the file/session callbacks plus a close verb. */
+export interface StudioPanelFace extends StudioInjected {
+  /** Hide the Studio panel. */
+  close(): void
+}
+
 /** Maximum characters kept of an element's outerHTML in an annotation. */
 const MAX_HTML = 2000
 /** Maximum characters kept of an element's text content in an annotation. */

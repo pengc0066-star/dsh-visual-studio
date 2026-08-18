@@ -166,7 +166,7 @@ const CANVAS_CSS = `
     align-items: center;
     justify-content: center;
     padding: 32px;
-    background: repeating-conic-gradient(#f1f2f5 0% 25%, #e7e9ee 0% 50%) 0 0 / 20px 20px;
+    background: repeating-conic-gradient(#f6f7f9 0% 25%, #f2f4f7 0% 50%) 0 0 / 24px 24px;
   }
   #vs-stage {
     transform: scale(var(--vs-zoom));
@@ -177,7 +177,7 @@ const CANVAS_CSS = `
 `
 
 /** Checkerboard background style injected into full-document previews. */
-const FULL_DOC_STYLE = `<style>html,body{margin:0;padding:0;background:repeating-conic-gradient(#f1f2f5 0% 25%, #e7e8ed 0% 50%) 0 0/20px 20px;}</style>`
+const FULL_DOC_STYLE = `<style>html,body{margin:0;padding:0;background:repeating-conic-gradient(#f6f7f9 0% 25%, #f2f4f7 0% 50%) 0 0/24px 24px;}</style>`
 
 /**
  * Build the sandboxed preview `srcdoc`: the source content plus the inspector
