@@ -346,7 +346,7 @@ export function StudioPanel(props: StudioPanelProps) {
         <div className={styles.toolbarGroup}>
           <button
             type="button"
-            className={styles.iconBtn}
+            className={`${styles.btn} ${styles.iconBtn}`}
             data-tooltip={codeCollapsed ? '展开代码' : '折叠代码'}
             aria-label={codeCollapsed ? '展开代码' : '折叠代码'}
             onClick={() => setCodeCollapsed(v => !v)}
@@ -355,14 +355,14 @@ export function StudioPanel(props: StudioPanelProps) {
           </button>
           <button
             type="button"
-            className={inspectMode ? styles.btnActive : styles.btn}
+            className={inspectMode ? `${styles.btn} ${styles.btnActive}` : styles.btn}
             onClick={toggleInspect}
           >
             {inspectMode ? '检查中' : '元素检查'}
           </button>
           <button
             type="button"
-            className={viewport === 'mobile' ? styles.btnActive : styles.btn}
+            className={viewport === 'mobile' ? `${styles.btn} ${styles.btnActive}` : styles.btn}
             data-tooltip={viewport === 'desktop' ? '切换到手机视口' : '切换到桌面视口'}
             onClick={() => setViewport(v => (v === 'desktop' ? 'mobile' : 'desktop'))}
           >
@@ -381,7 +381,7 @@ export function StudioPanel(props: StudioPanelProps) {
           </select>
           <button
             type="button"
-            className={styles.iconBtn}
+            className={`${styles.btn} ${styles.iconBtn}`}
             data-tooltip="收起面板"
             aria-label="收起面板"
             onClick={() => setCollapsed(true)}
@@ -399,7 +399,7 @@ export function StudioPanel(props: StudioPanelProps) {
             <div className={styles.codeRail}>
               <button
                 type="button"
-                className={styles.iconBtn}
+                className={`${styles.btn} ${styles.iconBtn}`}
                 data-tooltip="展开代码"
                 aria-label="展开代码"
                 onClick={() => setCodeCollapsed(false)}
@@ -449,7 +449,7 @@ export function StudioPanel(props: StudioPanelProps) {
             />
             <button
               type="button"
-              className={styles.btnPrimary}
+              className={`${styles.btn} ${styles.btnPrimary}`}
               onClick={() => void submitNote()}
               disabled={currentFile === null || sessionId === undefined || note.trim() === ''}
             >

@@ -141,14 +141,12 @@
 }
 
 .btnActive {
-  composes: btn;
   border-color: var(--vs-accent);
   background: var(--vs-accent-soft);
   color: var(--vs-accent);
 }
 
 .btnPrimary {
-  composes: btn;
   border-color: transparent;
   background: var(--vs-accent);
   color: #ffffff;
@@ -160,7 +158,6 @@
 }
 
 .iconBtn {
-  composes: btn;
   width: 30px;
   padding: 0;
 }
@@ -418,21 +415,20 @@
   word-break: break-word;
 }
 
-.status {
+.statusPending {
   align-self: flex-start;
   font-size: 11px;
   border-radius: 4px;
   padding: 1px 7px;
-}
-
-.statusPending {
-  composes: status;
   background: rgba(214, 158, 46, 0.14);
   color: #9a6b00;
 }
 
 .statusProcessed {
-  composes: status;
+  align-self: flex-start;
+  font-size: 11px;
+  border-radius: 4px;
+  padding: 1px 7px;
   background: rgba(46, 160, 67, 0.14);
   color: #1a7f37;
 }
