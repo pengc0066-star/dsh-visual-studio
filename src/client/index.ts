@@ -1,50 +1,61 @@
 /**
  * Visual HTML/SVG Studio plugin, browser half: registers the Studio panel into
- * the frame-wide `shell.overlay` seat and a compact entry button into the
- * composer tool row, sharing one open-state source between them. The panel and
- * button are pure props consumers; `ctx` stays in this apply closure.
+ * the frame-wide `shell.overlay` seat, a compact entry button into the
+ * composer tool row, and the artifacts bar above the composer. All three share
+ * one open-state source; the panel and bars are pure props consumers and `ctx`
+ * stays in this apply closure.
  */
 
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConnectionHandle, SessionId } from '@deepseek-ai/dsh-client-connection/client'
 // Type-only: merges the `shell.overlay` SlotMap entry declared by ui-layout.
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-// Type-only: merges the `conversation.input.left` SlotMap entry declared by ui-conversation.
+// Type-only: merges the `conversation.input.*` SlotMap entries declared by ui-conversation.
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { StudioPanel } from './StudioPanel.tsx'
 import { StudioEntryButton } from './StudioEntryButton.tsx'
-import type { OpenController, StudioInjected, StudioPanelFace } from './studio.ts'
+import { ArtifactsBar } from './ArtifactsBar.tsx'
+import type { ArtifactRecord, OpenController, StudioInjected, StudioPanelFace, StudioState } from './studio.ts'
 
 /** The logical RPC channel the node half serves (protocol constant, shared by name). */
 const STUDIO_CHANNEL = '/visual-studio'
 
-/** Required services: the slot registry (the panel and entry composition seats). */
+/** Required services: the slot registry (the panel and bar composition seats). */
 export const inject = ['slots']
 
-/** Create a tiny host-observable boolean controller (getSnapshot + subscribe + verbs). */
+/** Create a host-observable open-state controller (getSnapshot + subscribe + verbs). */
 function createOpenController(): OpenController {
-  let open = false
+  let state: StudioState = { open: false, pendingFile: null }
   const listeners = new Set<() => void>()
   const emit = (): void => { for (const listener of [...listeners]) listener() }
   return {
-    getSnapshot: () => open,
+    getSnapshot: () => state,
     subscribe: (listener) => {
       listeners.add(listener)
       return () => { listeners.delete(listener) }
     },
-    setOpen: (next) => {
-      if (open === next) return
-      open = next
+    setOpen: (open) => {
+      if (state.open === open) return
+      state = { ...state, open }
       emit()
     },
     toggle: () => {
-      open = !open
+      state = { ...state, open: !state.open }
       emit()
+    },
+    openFile: (path) => {
+      state = { open: true, pendingFile: path }
+      emit()
+    },
+    consumePendingFile: () => {
+      const pending = state.pendingFile
+      state = { ...state, pendingFile: null }
+      return pending
     },
   }
 }
 
-/** Build the file/session callbacks over the Connection transport. */
+/** Build the file/session/artifact callbacks over the Connection transport. */
 function createFileFace(ctx: ClientContext): StudioInjected {
   const connection = ctx.get('connection') as ConnectionHandle | undefined
   if (connection === undefined) {
@@ -52,9 +63,11 @@ function createFileFace(ctx: ClientContext): StudioInjected {
     return {
       listFiles: unavailable,
       readFile: unavailable,
+      readFileBytes: unavailable,
       writeFile: unavailable,
       createFile: unavailable,
       submitAnnotation: async () => false,
+      listArtifacts: async () => [],
     }
   }
 
@@ -73,6 +86,10 @@ function createFileFace(ctx: ClientContext): StudioInjected {
       const value = await call('read', { root, path }) as { content: string }
       return value.content
     },
+    readFileBytes: async (root, path) => {
+      const value = await call('readBytes', { root, path }) as { base64: string }
+      return value.base64
+    },
     writeFile: async (root, path, content) => {
       return await call('write', { root, path, content }) as { backup?: string }
     },
@@ -88,12 +105,16 @@ function createFileFace(ctx: ClientContext): StudioInjected {
       })
       return response.result.ok
     },
+    listArtifacts: async (sessionId) => {
+      const value = await call('artifacts.list', { sessionId }) as { artifacts: ArtifactRecord[] }
+      return value.artifacts
+    },
   }
 }
 
 /**
- * Client plugin body: register the Studio panel into `shell.overlay` and the
- * entry button into `conversation.input.left`, sharing one open-state source.
+ * Client plugin body: register the Studio panel, the entry button, and the
+ * artifacts bar, all sharing one open-state source.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
@@ -108,6 +129,7 @@ export function apply(ctx: ClientContext): void {
       inject: (): StudioPanelFace & { hooks: { open: OpenController } } => ({
         hooks: { open },
         close: () => open.setOpen(false),
+        consumePendingFile: () => open.consumePendingFile(),
         ...fileFace,
       }),
     },
@@ -125,5 +147,23 @@ export function apply(ctx: ClientContext): void {
       }),
     },
     StudioEntryButton,
+  ))
+
+  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register(
+    {
+      name: 'conversation.input.dock',
+      id: 'visual-studio-artifacts',
+      order: 50,
+      inject: (): {
+        hooks: { open: OpenController }
+        listArtifacts: (sessionId: string) => Promise<ArtifactRecord[]>
+        openFile: (path: string) => void
+      } => ({
+        hooks: { open },
+        listArtifacts: fileFace.listArtifacts,
+        openFile: (path) => open.openFile(path),
+      }),
+    },
+    ArtifactsBar,
   ))
 }

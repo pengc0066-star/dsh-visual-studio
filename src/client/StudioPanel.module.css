@@ -514,6 +514,99 @@
   flex: none;
 }
 
+/* ── image preview ───────────────────────────────────────────────────────── */
+
+.imagePreview {
+  flex: 1 1 auto;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  margin: auto;
+  transform-origin: center center;
+  cursor: crosshair;
+  background: repeating-conic-gradient(#f6f7f9 0% 25%, #f2f4f7 0% 50%) 0 0 / 24px 24px;
+}
+
+/* ── artifacts bar (above the composer) ──────────────────────────────────── */
+
+.artifactsBar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 1px solid var(--vs-border);
+  border-radius: 8px;
+  background: var(--vs-bg);
+  margin-bottom: 8px;
+}
+
+.artifactsToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  color: var(--vs-text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.artifactsToggle:hover {
+  background: var(--vs-bg-hover);
+  color: var(--vs-text);
+}
+
+.artifactsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.artifactItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 4px 8px;
+  border: 1px solid var(--vs-border);
+  border-radius: 6px;
+  background: var(--vs-bg);
+  color: var(--vs-text);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.artifactItem:hover {
+  background: var(--vs-bg-hover);
+}
+
+.artifactItem:focus-visible {
+  outline: 2px solid var(--vs-accent);
+  outline-offset: 1px;
+}
+
+.artifactIcon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--vs-text-caption);
+  flex: none;
+}
+
+.artifactName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifactMeta {
+  color: var(--vs-text-caption);
+  white-space: nowrap;
+  flex: none;
+}
+
 /* ── composer entry button ───────────────────────────────────────────────── */
 
 .entryBtn {

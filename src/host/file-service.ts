@@ -14,6 +14,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
 import type { RpcResult } from '@deepseek-ai/dsh-host-apiproxy/api'
+import type { ArtifactRegistry } from './artifact-service.ts'
 
 /** File extensions the Studio opens and edits. */
 const SOURCE_EXTENSIONS = new Set(['.html', '.htm', '.svg'])
@@ -114,6 +115,12 @@ export async function readSourceFile(root: string, path: string): Promise<string
   return await readFile(target, 'utf8')
 }
 
+/** Read one workspace file's bytes as base64 (for image preview). */
+export async function readSourceFileBase64(root: string, path: string): Promise<string> {
+  const target = assertWithinWorkspace(root, path)
+  return (await readFile(target)).toString('base64')
+}
+
 /**
  * Write one source file, keeping a timestamped sibling backup of the prior
  * content when the file already existed.
@@ -177,7 +184,7 @@ function parseTarget(payload: unknown): { root: string; path: string } {
  * handler never throws.
  * @returns a Connection RPC handler over workspace source files.
  */
-export function createStudioHandler(): ConnectionRpcHandler {
+export function createStudioHandler(registry?: ArtifactRegistry): ConnectionRpcHandler {
   return async (endpoint, payload): Promise<RpcResult<unknown>> => {
     try {
       switch (endpoint) {
@@ -189,6 +196,10 @@ export function createStudioHandler(): ConnectionRpcHandler {
           const { root, path } = parseTarget(payload)
           return { ok: true, value: { content: await readSourceFile(root, path) } }
         }
+        case 'readBytes': {
+          const { root, path } = parseTarget(payload)
+          return { ok: true, value: { base64: await readSourceFileBase64(root, path) } }
+        }
         case 'write': {
           const { root, path } = parseTarget(payload)
           const content = (payload as { content?: unknown }).content
@@ -198,6 +209,11 @@ export function createStudioHandler(): ConnectionRpcHandler {
         case 'create': {
           const { root, path } = parseTarget(payload)
           return { ok: true, value: { path: await createSourceFile(root, path) } }
+        }
+        case 'artifacts.list': {
+          const { sessionId } = payload as { sessionId: string }
+          const artifacts = registry === undefined ? [] : registry.list(sessionId)
+          return { ok: true, value: { artifacts } }
         }
         default:
           return { ok: false, error: { code: 'internal', message: `unknown visual-studio endpoint: ${endpoint}`, details: {} } }

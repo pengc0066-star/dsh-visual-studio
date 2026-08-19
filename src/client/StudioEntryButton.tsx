@@ -5,15 +5,16 @@
  */
 
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import type { StudioState } from './studio.ts'
 import styles from './StudioPanel.module.css'
 
 export interface StudioEntryButtonProps {
-  useOpen: SnapshotSelectorHook<boolean>
+  useOpen: SnapshotSelectorHook<StudioState>
   toggle(): void
 }
 
 export function StudioEntryButton({ useOpen, toggle }: StudioEntryButtonProps) {
-  const open = useOpen(value => value)
+  const open = useOpen(value => value.open)
   return (
     <button
       type="button"

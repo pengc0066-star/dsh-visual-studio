@@ -7,11 +7,12 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { MouseEvent as ReactMouseEvent } from 'react'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionListState, WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
 import { CodeEditor } from './CodeEditor.tsx'
-import { formatAnnotationMessage } from './studio.ts'
-import type { Annotation, InspectPayload, StudioPanelFace } from './studio.ts'
+import { formatAnnotationMessage, imageMime, kindOfPath } from './studio.ts'
+import type { Annotation, AnnotationMeta, InspectPayload, StudioPanelFace, StudioState } from './studio.ts'
 import { INSPECT_EVENT, INSPECT_TOGGLE, ZOOM_EVENT, previewDocument } from './inspector.ts'
 import styles from './StudioPanel.module.css'
 
@@ -19,7 +20,7 @@ import styles from './StudioPanel.module.css'
 export interface StudioPanelProps extends StudioPanelFace {
   useSessions: SnapshotSelectorHook<SessionListState>
   useWorkspaces: SnapshotSelectorHook<WorkspaceListState>
-  useOpen: SnapshotSelectorHook<boolean>
+  useOpen: SnapshotSelectorHook<StudioState>
 }
 
 /** Poll interval (ms) for detecting agent edits to the open file. */
@@ -65,16 +66,19 @@ function loadAnnotations(): Annotation[] {
 }
 
 export function StudioPanel(props: StudioPanelProps) {
-  const { useSessions, useOpen, listFiles, readFile, writeFile, createFile, submitAnnotation, close } = props
-  const open = useOpen(value => value)
+  const { useSessions, useOpen, listFiles, readFile, readFileBytes, writeFile, createFile, submitAnnotation, listArtifacts, close, consumePendingFile } = props
+  const open = useOpen(value => value.open)
   const sessionId = useSessions(s => s.current)
   const cwd = useSessions(s => (s.current === undefined ? undefined : s.byId[s.current]?.cwd))
 
   const [codeCollapsed, setCodeCollapsed] = useState(false)
   const [files, setFiles] = useState<string[]>([])
   const [currentFile, setCurrentFile] = useState<string | null>(null)
+  const [currentVersion, setCurrentVersion] = useState<number | undefined>(undefined)
   const [content, setContent] = useState('')
   const [preview, setPreview] = useState('')
+  const [imageUrl, setImageUrl] = useState<string | null>(null)
+  const [imageBox, setImageBox] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
   const [saved, setSaved] = useState('')
   const [history, setHistory] = useState<string[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
@@ -89,6 +93,7 @@ export function StudioPanel(props: StudioPanelProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const editTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
+  const currentKind = currentFile === null ? null : kindOfPath(currentFile)
   const srcdoc = useMemo(() => previewDocument(preview), [preview])
 
   const postToFrame = useCallback((message: unknown) => {
@@ -126,19 +131,54 @@ export function StudioPanel(props: StudioPanelProps) {
   const openFile = useCallback(async (path: string) => {
     if (cwd === undefined) return
     try {
-      const text = await readFile(cwd, path)
-      setCurrentFile(path)
-      setContent(text)
-      setPreview(text)
-      setSaved(text)
-      setHistory([text])
-      setHistoryIndex(0)
       setSelected(null)
+      setImageBox(null)
       setError(null)
+      if (kindOfPath(path) === 'image') {
+        const base64 = await readFileBytes(cwd, path)
+        setCurrentFile(path)
+        setContent('')
+        setPreview('')
+        setImageUrl(`data:${imageMime(path)};base64,${base64}`)
+        setSaved('')
+        setHistory([])
+        setHistoryIndex(-1)
+      } else {
+        const text = await readFile(cwd, path)
+        setCurrentFile(path)
+        setContent(text)
+        setPreview(text)
+        setImageUrl(null)
+        setSaved(text)
+        setHistory([text])
+        setHistoryIndex(0)
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     }
-  }, [cwd, readFile])
+  }, [cwd, readFile, readFileBytes])
+
+  // Open the file queued by the artifacts bar (or entry button) once visible.
+  useEffect(() => {
+    if (!open) return
+    const pending = consumePendingFile()
+    if (pending !== null) void openFile(pending)
+  }, [open, consumePendingFile, openFile])
+
+  // Resolve the open file's artifact version for annotation metadata.
+  useEffect(() => {
+    if (currentFile === null || sessionId === undefined) {
+      setCurrentVersion(undefined)
+      return
+    }
+    let cancelled = false
+    listArtifacts(sessionId).then(artifacts => {
+      if (cancelled) return
+      const match = artifacts.find(artifact => artifact.path === currentFile)
+      setCurrentVersion(match?.version)
+    }).catch(() => { /* version is best-effort */ })
+    return () => { cancelled = true }
+  }, [currentFile, sessionId, listArtifacts])
 
   /** Re-read the open file from disk (manual refresh). */
   const refresh = useCallback(async () => {
@@ -229,6 +269,15 @@ export function StudioPanel(props: StudioPanelProps) {
     }
   }, [cwd, createFile, openFile])
 
+  /** Record a point/box annotation on the image preview (normalized %). */
+  const onImageClick = useCallback((event: ReactMouseEvent<HTMLImageElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const x = Math.round(((event.clientX - rect.left) / rect.width) * 100)
+    const y = Math.round(((event.clientY - rect.top) / rect.height) * 100)
+    setImageBox({ x, y, width: 0, height: 0 })
+    setSelected(null)
+  }, [])
+
   /** Submit the current annotation back to the agent session. */
   const submitNote = useCallback(async () => {
     if (note.trim() === '') return
@@ -240,7 +289,14 @@ export function StudioPanel(props: StudioPanelProps) {
       setError('请先打开一个文件再提交批注')
       return
     }
-    const message = formatAnnotationMessage(currentFile, selected, note.trim())
+    const meta: AnnotationMeta = {
+      ...(currentVersion !== undefined ? { version: currentVersion } : {}),
+      ...(currentKind !== null ? { kind: currentKind } : {}),
+      ...(currentKind === 'image' && imageBox !== null
+        ? { location: `x=${imageBox.x}% y=${imageBox.y}%` }
+        : {}),
+    }
+    const message = formatAnnotationMessage(currentFile, selected, note.trim(), meta)
     try {
       const ok = await submitAnnotation(sessionId, message)
       if (!ok) {
@@ -260,7 +316,7 @@ export function StudioPanel(props: StudioPanelProps) {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     }
-  }, [sessionId, currentFile, selected, note, submitAnnotation])
+  }, [sessionId, currentFile, selected, note, submitAnnotation, currentVersion, currentKind, imageBox])
 
   // Route inspector messages from the sandboxed preview iframe.
   useEffect(() => {
@@ -298,6 +354,11 @@ export function StudioPanel(props: StudioPanelProps) {
   if (!open) return null
 
   const isDirty = content !== saved
+  const hasLocation = currentKind === 'image'
+    ? imageBox !== null
+    : (currentKind === 'html' || currentKind === 'svg')
+      ? selected !== null
+      : true
 
   return (
     <div className={styles.backdrop} onClick={close}>
@@ -378,7 +439,9 @@ export function StudioPanel(props: StudioPanelProps) {
           <div className={codeCollapsed ? `${styles.codePane} ${styles.codePaneCollapsed}` : styles.codePane}>
             {!codeCollapsed && (currentFile === null
               ? <div className={styles.emptyState}>选择文件后在此编辑源码</div>
-              : <CodeEditor value={content} onChange={onEdit} placeholder="在此编辑 HTML/SVG 源码" />)}
+              : currentKind === 'image'
+                ? <div className={styles.emptyState}>图片文件（无源码编辑）</div>
+                : <CodeEditor value={content} onChange={onEdit} placeholder="在此编辑源码" />)}
           </div>
 
           <div className={styles.codeDivider}>
@@ -408,21 +471,29 @@ export function StudioPanel(props: StudioPanelProps) {
           <div className={`${styles.preview} ${viewport === 'mobile' ? styles.mobile : ''}`}>
             {currentFile === null
               ? <div className={styles.emptyState}>选择文件后在此预览</div>
-              : (
-                <iframe
-                  ref={iframeRef}
-                  title="Visual Studio preview"
-                  sandbox="allow-scripts"
-                  srcDoc={srcdoc}
-                  onLoad={applyFrameState}
-                />
-              )}
+              : currentKind === 'image'
+                ? <img className={styles.imagePreview} src={imageUrl ?? undefined} alt={currentFile} onClick={onImageClick} style={{ transform: `scale(${zoom})` }} />
+                : currentKind === 'html' || currentKind === 'svg'
+                  ? (
+                    <iframe
+                      ref={iframeRef}
+                      title="Visual Studio preview"
+                      sandbox="allow-scripts"
+                      srcDoc={srcdoc}
+                      onLoad={applyFrameState}
+                    />
+                  )
+                  : <div className={styles.emptyState}>文本文件（在左侧编辑）</div>}
           </div>
 
           <aside className={styles.inspector}>
             <div className={styles.section}>
               <div className={styles.sectionTitle}>元素检查</div>
-              {selected === null ? (
+              {currentKind === 'image' ? (
+                imageBox === null
+                  ? <div className={styles.kv}>点击图片进行点选批注</div>
+                  : <div className={styles.kv}><span className={styles.kvLabel}>定位 </span>x={imageBox.x}% y={imageBox.y}%</div>
+              ) : selected === null ? (
                 <div className={styles.kv}>在预览中开启「元素检查」后点击任意元素</div>
               ) : (
                 <>
@@ -440,14 +511,14 @@ export function StudioPanel(props: StudioPanelProps) {
                 className={styles.noteInput}
                 value={note}
                 onChange={event => setNote(event.target.value)}
-                placeholder={selected === null ? '先在预览中选中元素，再输入批注' : `针对 ${selected.tag} 的批注…`}
+                placeholder={currentKind === 'image' ? '点击图片定位后输入批注' : currentKind === 'html' || currentKind === 'svg' ? '先在预览中选中元素，再输入批注' : '输入批注（例如：这段描述需要改）'}
                 rows={3}
               />
               <button
                 type="button"
                 className={`${styles.btn} ${styles.btnPrimary}`}
                 onClick={() => void submitNote()}
-                disabled={currentFile === null || selected === null || note.trim() === ''}
+                disabled={currentFile === null || note.trim() === '' || !hasLocation}
               >
                 提交给 Agent
               </button>

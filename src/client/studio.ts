@@ -51,30 +51,87 @@ export interface StudioInjected {
   listFiles(root: string): Promise<string[]>
   /** Read one workspace file's text. */
   readFile(root: string, path: string): Promise<string>
+  /** Read one workspace file's bytes as base64 (for image preview). */
+  readFileBytes(root: string, path: string): Promise<string>
   /** Write one workspace file, keeping a backup of the prior content. */
   writeFile(root: string, path: string, content: string): Promise<{ backup?: string }>
   /** Create one empty workspace file (refuses to overwrite). */
   createFile(root: string, path: string): Promise<string>
   /** Send the annotation text to the current agent session as a user message. */
   submitAnnotation(sessionId: string, text: string): Promise<boolean>
+  /** List the current session's deliverable artifacts. */
+  listArtifacts(sessionId: string): Promise<ArtifactRecord[]>
+}
+
+/** The deliverable kind of an artifact, driving the Studio's open behavior. */
+export type ArtifactKind = 'html' | 'svg' | 'image' | 'text' | 'other'
+
+/** One deliverable file the current session's agent produced (wire shape). */
+export interface ArtifactRecord {
+  path: string
+  name: string
+  kind: ArtifactKind
+  version: number
+  createdAt: number
+  updatedAt: number
+}
+
+/** Optional annotation metadata: artifact version/kind and a location hint. */
+export interface AnnotationMeta {
+  version?: number
+  kind?: ArtifactKind
+  /** Human-readable location: selector, `x,y,w,h`, or `L3-L7`. */
+  location?: string
+}
+
+const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'bmp'])
+
+/** Classify a file path into its deliverable kind (client-side, mirrors host). */
+export function kindOfPath(path: string): ArtifactKind {
+  const ext = path.split('.').pop()?.toLowerCase() ?? ''
+  if (ext === 'html' || ext === 'htm') return 'html'
+  if (ext === 'svg') return 'svg'
+  if (IMAGE_EXT.has(ext)) return 'image'
+  return 'text'
+}
+
+/** MIME type for an image path, or `application/octet-stream`. */
+export function imageMime(path: string): string {
+  const ext = path.split('.').pop()?.toLowerCase() ?? ''
+  const map: Record<string, string> = {
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp',
+    gif: 'image/gif', avif: 'image/avif', bmp: 'image/bmp',
+  }
+  return map[ext] ?? 'application/octet-stream'
+}
+
+/** The Studio open-state snapshot shared between the entry button, bar, and panel. */
+export interface StudioState {
+  open: boolean
+  /** A file queued to open once the panel mounts (set by the artifacts bar). */
+  pendingFile: string | null
 }
 
 /**
- * Shared open-state source for the Studio panel and its composer entry button.
- * It satisfies the renderer's `HostObservable<boolean>` face (getSnapshot +
- * subscribe) while carrying the toggle/set verbs the registrants call.
+ * Shared open-state source for the Studio panel, entry button, and artifacts
+ * bar. It satisfies the renderer's `HostObservable` face (getSnapshot +
+ * subscribe) while carrying the verbs the registrants call.
  */
 export interface OpenController {
-  getSnapshot(): boolean
+  getSnapshot(): StudioState
   subscribe(listener: () => void): () => void
   toggle(): void
   setOpen(open: boolean): void
+  openFile(path: string): void
+  consumePendingFile(): string | null
 }
 
 /** The panel's inject face: the file/session callbacks plus a close verb. */
 export interface StudioPanelFace extends StudioInjected {
   /** Hide the Studio panel. */
   close(): void
+  /** Take (and clear) the file queued by the artifacts bar. */
+  consumePendingFile(): string | null
 }
 
 /** Maximum characters kept of an element's outerHTML in an annotation. */
@@ -105,11 +162,18 @@ function styleLine(entry: [string, string]): string {
  * @param note - the user's own annotation text.
  * @returns the plain-text message submitted as a user prompt.
  */
-export function formatAnnotationMessage(filePath: string, payload: InspectPayload | null, note: string): string {
+export function formatAnnotationMessage(
+  filePath: string,
+  payload: InspectPayload | null,
+  note: string,
+  meta: AnnotationMeta = {},
+): string {
   const lines = [
     '[Visual HTML/SVG Studio 批注]',
     `文件: ${filePath}`,
   ]
+  if (meta.version !== undefined) lines.push(`版本: v${meta.version}`)
+  if (meta.kind !== undefined) lines.push(`类型: ${meta.kind}`)
   if (payload !== null) {
     lines.push(
       `Selector: ${payload.selector}`,
@@ -120,6 +184,7 @@ export function formatAnnotationMessage(filePath: string, payload: InspectPayloa
       `Computed styles: ${Object.entries(payload.styles).map(styleLine).join('; ') || '(none)'}`,
     )
   }
+  if (meta.location !== undefined) lines.push(`定位: ${meta.location}`)
   lines.push(`批注: ${note}`)
   return lines.join('\n')
 }
