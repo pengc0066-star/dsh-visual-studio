@@ -399,6 +399,19 @@ export function StudioPanel(props: StudioPanelProps) {
       : a))
   }, [])
 
+  // Development assertion: the open path, loaded content source, and annotation
+  // scope must reference one document identity. Runs before the early return so
+  // the hook count stays stable across open/closed renders.
+  useEffect(() => {
+    if (currentFile !== null && loadedPathRef.current !== currentFile) {
+      console.warn(`[visual-studio] 文档身份不一致: 打开 ${currentFile}，但内容/预览来自 ${loadedPathRef.current}`)
+    }
+    const foreign = annotations.filter(a => currentFile === null || a.filePath !== currentFile)
+    if (currentFile !== null && foreign.length > 0) {
+      console.warn(`[visual-studio] 批注作用域含其他文件: ${foreign.map(a => a.filePath).join(', ')}`)
+    }
+  }, [currentFile, content, preview, imageUrl, annotations])
+
   if (!open) return null
 
   const isDirty = content !== saved
@@ -410,18 +423,6 @@ export function StudioPanel(props: StudioPanelProps) {
 
   // Annotations for the current document only (same artifact id).
   const currentAnnotations = currentFile === null ? [] : annotations.filter(a => a.filePath === currentFile)
-
-  // Development assertion: the open path, loaded content source, and annotation
-  // scope must reference one document identity.
-  useEffect(() => {
-    if (currentFile !== null && loadedPathRef.current !== currentFile) {
-      console.warn(`[visual-studio] 文档身份不一致: 打开 ${currentFile}，但内容/预览来自 ${loadedPathRef.current}`)
-    }
-    const foreign = annotations.filter(a => currentFile === null || a.filePath !== currentFile)
-    if (currentFile !== null && foreign.length > 0) {
-      console.warn(`[visual-studio] 批注作用域含其他文件: ${foreign.map(a => a.filePath).join(', ')}`)
-    }
-  }, [currentFile, content, preview, imageUrl, annotations])
 
   return (
     <div className={styles.backdrop} onClick={close}>
