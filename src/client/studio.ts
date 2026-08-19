@@ -39,6 +39,16 @@ export interface Annotation {
   selector: string
   /** The inspected element facts at submission time. */
   payload: InspectPayload | null
+  /** Text selection facts, when the annotation is a text-selection note. */
+  selection?: {
+    startLine: number
+    endLine: number
+    startColumn: number
+    endColumn: number
+    startOffset: number
+    endOffset: number
+    text: string
+  }
   /** The user's own note. */
   note: string
   /** Whether the agent has since addressed the note. */
@@ -73,6 +83,7 @@ export type ArtifactKind = 'html' | 'svg' | 'image' | 'text' | 'other'
 /** One deliverable file the current session's agent produced (wire shape). */
 export interface ArtifactRecord {
   path: string
+  relativePath: string
   name: string
   kind: ArtifactKind
   version: number
@@ -84,8 +95,10 @@ export interface ArtifactRecord {
 export interface AnnotationMeta {
   version?: number
   kind?: ArtifactKind
-  /** Human-readable location: selector, `x,y,w,h`, or `L3-L7`. */
+  /** Human-readable location: selector, `x,y,w,h`, or `L3:C4-L7:C9`. */
   location?: string
+  /** Selected text for a text-selection annotation. */
+  selection?: string
 }
 
 const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'bmp'])
@@ -204,6 +217,7 @@ export function formatAnnotationMessage(
     )
   }
   if (meta.location !== undefined) lines.push(`定位: ${meta.location}`)
+  if (meta.selection !== undefined) lines.push(`选中文本: ${truncate(meta.selection, MAX_TEXT)}`)
   lines.push(`批注: ${note}`)
   return lines.join('\n')
 }

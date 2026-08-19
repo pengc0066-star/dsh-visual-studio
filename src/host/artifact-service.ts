@@ -7,7 +7,7 @@
  * @module @deepseek-ai/dsh-visual-studio/host/artifact-service
  */
 
-import { basename, extname } from 'node:path'
+import { basename, extname, relative } from 'node:path'
 
 /** The deliverable kind of one artifact, driving the Studio's open behavior. */
 export type ArtifactKind = 'html' | 'svg' | 'image' | 'text' | 'other'
@@ -16,6 +16,8 @@ export type ArtifactKind = 'html' | 'svg' | 'image' | 'text' | 'other'
 export interface ArtifactRecord {
   /** Absolute display path. */
   path: string
+  /** Workspace-relative path with `/` separators (empty when not under cwd). */
+  relativePath: string
   /** File name (display). */
   name: string
   /** Deliverable kind. */
@@ -84,10 +86,11 @@ export class ArtifactRegistry {
   /**
    * Record one observed write/edit for a session path, merging or creating.
    * @param sessionId - the agent session id that touched the file.
+   * @param cwd - the session workspace root (for the relative path).
    * @param path - absolute display path.
    * @param at - observation time (epoch ms).
    */
-  observe(sessionId: string, path: string, at = Date.now()): void {
+  observe(sessionId: string, cwd: string | undefined, path: string, at = Date.now()): void {
     if (sessionId === '' || path === '' || isExcludedPath(path)) return
     let session = this.bySession.get(sessionId)
     if (session === undefined) {
@@ -100,8 +103,12 @@ export class ArtifactRegistry {
       existing.updatedAt = at
       return
     }
+    const relativePath = cwd === undefined
+      ? ''
+      : relative(cwd, path).replaceAll('\\', '/')
     session.set(path, {
       path,
+      relativePath,
       name: basename(path),
       kind: classifyKind(path),
       version: 1,

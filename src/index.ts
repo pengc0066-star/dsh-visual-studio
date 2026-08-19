@@ -28,7 +28,7 @@ export const STUDIO_CHANNEL = '/visual-studio'
 /** Narrow the `fs/observed` actor to the fields the registry needs. */
 interface ObservedActor {
   name?: string
-  agent?: { id?: string }
+  agent?: { id?: string; session?: { header?: { cwd?: string } } }
 }
 
 /**
@@ -43,7 +43,7 @@ export function apply(ctx: Context): void {
     if (observed?.name !== 'write' && observed?.name !== 'edit') return
     const sessionId = observed.agent?.id
     if (sessionId === undefined) return
-    registry.observe(sessionId, target.displayPath)
+    registry.observe(sessionId, observed.agent?.session?.header?.cwd, target.displayPath)
   })
   ctx.effect(
     () => ctx.connection.rpc.handle(STUDIO_CHANNEL, createStudioHandler(registry), { authority: 'loopback' }),

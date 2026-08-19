@@ -12,7 +12,7 @@ import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionListState, WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
 import { CodeEditor } from './CodeEditor.tsx'
 import type { EditorSelection } from './CodeEditor.tsx'
-import { formatAnnotationMessage, imageMime, kindOfPath, relativePathOf } from './studio.ts'
+import { formatAnnotationMessage, imageMime, kindOfPath, relativePathOf, truncate } from './studio.ts'
 import type { Annotation, AnnotationMeta, InspectPayload, StudioPanelFace, StudioState } from './studio.ts'
 import { INSPECT_EVENT, INSPECT_TOGGLE, ZOOM_EVENT, previewDocument } from './inspector.ts'
 import styles from './StudioPanel.module.css'
@@ -41,13 +41,6 @@ function joinPath(root: string, name: string): string {
   const base = root.replace(/[\\/]+$/, '')
   const leaf = name.replace(/^[\\/]+/, '')
   return `${base}/${leaf}`
-}
-
-/** Shorten an absolute path against the workspace root for display. */
-function shorten(root: string | undefined, path: string): string {
-  if (root === undefined) return path
-  const rel = path.startsWith(root) ? path.slice(root.length).replace(/^[\\/]+/, '') : path
-  return rel === '' ? path : rel
 }
 
 /** Read persisted annotations, tolerating a corrupt or foreign payload. */
@@ -337,12 +330,14 @@ export function StudioPanel(props: StudioPanelProps) {
     const meta: AnnotationMeta = {
       ...(currentVersion !== undefined ? { version: currentVersion } : {}),
       ...(currentKind !== null ? { kind: currentKind } : {}),
-      ...(currentKind === 'image' && imageBox !== null
-        ? { location: imageBox.width === 0 && imageBox.height === 0 ? `x=${imageBox.x}% y=${imageBox.y}%` : `x=${imageBox.x}% y=${imageBox.y}% w=${imageBox.width}% h=${imageBox.height}%` }
-        : {}),
-      ...(currentKind !== 'image' && currentKind !== 'html' && currentKind !== 'svg' && textSelection !== null
-        ? { location: `L${textSelection.startLine}-L${textSelection.endLine}` }
-        : {}),
+    }
+    if (currentKind === 'image' && imageBox !== null) {
+      meta.location = imageBox.width === 0 && imageBox.height === 0
+        ? `x=${imageBox.x}% y=${imageBox.y}%`
+        : `x=${imageBox.x}% y=${imageBox.y}% w=${imageBox.width}% h=${imageBox.height}%`
+    } else if (textSelection !== null) {
+      meta.location = `L${textSelection.startLine}:${textSelection.startColumn}-L${textSelection.endLine}:${textSelection.endColumn}`
+      meta.selection = textSelection.text
     }
     const message = formatAnnotationMessage(currentFile, selected, note.trim(), meta)
     try {
@@ -354,8 +349,12 @@ export function StudioPanel(props: StudioPanelProps) {
       setAnnotations(prev => [{
         id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Date.now()),
         filePath: currentFile,
+        ...(currentVersion !== undefined ? { version: currentVersion } : {}),
         selector: selected?.selector ?? '',
         payload: selected,
+        ...(textSelection !== null
+          ? { selection: { startLine: textSelection.startLine, endLine: textSelection.endLine, startColumn: textSelection.startColumn, endColumn: textSelection.endColumn, startOffset: textSelection.startOffset, endOffset: textSelection.endOffset, text: textSelection.text } }
+          : {}),
         note: note.trim(),
         status: 'pending',
         createdAt: Date.now(),
@@ -364,7 +363,7 @@ export function StudioPanel(props: StudioPanelProps) {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     }
-  }, [sessionId, currentFile, selected, note, submitAnnotation, currentVersion, currentKind, imageBox])
+  }, [sessionId, currentFile, selected, note, submitAnnotation, currentVersion, currentKind, imageBox, textSelection])
 
   // Route inspector messages from the sandboxed preview iframe.
   useEffect(() => {
@@ -418,8 +417,8 @@ export function StudioPanel(props: StudioPanelProps) {
   const hasLocation = currentKind === 'image'
     ? imageBox !== null
     : (currentKind === 'html' || currentKind === 'svg')
-      ? selected !== null
-      : true
+      ? selected !== null || textSelection !== null
+      : textSelection !== null
 
   // Annotations for the current document only (same artifact id).
   const currentAnnotations = currentFile === null ? [] : annotations.filter(a => a.filePath === currentFile)
@@ -584,9 +583,14 @@ export function StudioPanel(props: StudioPanelProps) {
                 imageBox === null
                   ? <div className={styles.kv}>点击或拖拽图片进行点选/框选批注</div>
                   : <div className={styles.kv}><span className={styles.kvLabel}>定位 </span>x={imageBox.x}% y={imageBox.y}%{imageBox.width > 0 || imageBox.height > 0 ? ` w=${imageBox.width}% h=${imageBox.height}%` : ''}</div>
+              ) : textSelection !== null ? (
+                <>
+                  <div className={styles.kv}>已选择 {textSelection.text.length} 个字符</div>
+                  <div className={styles.kv}><span className={styles.kvLabel}>范围 </span>L{textSelection.startLine}:{textSelection.startColumn} - L{textSelection.endLine}:{textSelection.endColumn}</div>
+                </>
               ) : currentKind === 'html' || currentKind === 'svg' ? (
                 selected === null
-                  ? <div className={styles.kv}>在预览中开启「元素检查」后点击任意元素</div>
+                  ? <div className={styles.kv}>在预览中开启「元素检查」后点击元素，或在代码中选中文字</div>
                   : (
                     <>
                       <div className={styles.kv}><span className={styles.kvLabel}>标签 </span>{selected.tag}</div>
@@ -596,9 +600,7 @@ export function StudioPanel(props: StudioPanelProps) {
                     </>
                   )
               ) : (
-                textSelection === null
-                  ? <div className={styles.kv}>在左侧编辑器中选中文本后批注</div>
-                  : <div className={styles.kv}><span className={styles.kvLabel}>定位 </span>L{textSelection.startLine}-L{textSelection.endLine}</div>
+                <div className={styles.kv}>在左侧编辑器中选中文本后批注</div>
               )}
             </div>
 
@@ -630,9 +632,14 @@ export function StudioPanel(props: StudioPanelProps) {
                     {annotation.status === 'pending' ? '未处理' : '已处理'}
                   </span>
                   <div className={styles.annotationNote}>{annotation.note}</div>
+                  {annotation.selection !== undefined && annotation.selection.text !== '' && (
+                    <div className={styles.annotationSelection}>{truncate(annotation.selection.text, 80)}</div>
+                  )}
                   <div className={styles.annotationMeta}>
-                    {shorten(cwd, annotation.filePath)}
+                    {relativePathOf(cwd, annotation.filePath)}
+                    {annotation.version !== undefined ? ` · v${annotation.version}` : ''}
                     {annotation.selector !== '' ? ` · ${annotation.selector}` : ''}
+                    {annotation.selection !== undefined ? ` · L${annotation.selection.startLine}-L${annotation.selection.endLine}` : ''}
                   </div>
                   <button type="button" className={styles.btn} onClick={() => toggleStatus(annotation.id)}>
                     {annotation.status === 'pending' ? '标记已处理' : '标记未处理'}

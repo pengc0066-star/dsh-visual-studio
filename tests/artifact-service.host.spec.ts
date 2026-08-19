@@ -36,9 +36,9 @@ describe('classifyKind', () => {
 describe('ArtifactRegistry', () => {
   it('merges repeated writes to one path and increments version', () => {
     const registry = new ArtifactRegistry()
-    registry.observe('s1', '/p/index.html', 100)
-    registry.observe('s1', '/p/index.html', 200)
-    registry.observe('s1', '/p/logo.svg', 150)
+    registry.observe('s1', '/p', '/p/index.html', 100)
+    registry.observe('s1', '/p', '/p/index.html', 200)
+    registry.observe('s1', '/p', '/p/logo.svg', 150)
     const artifacts = registry.list('s1')
     expect(artifacts).toHaveLength(2)
     const html = artifacts.find(a => a.path === '/p/index.html')
@@ -49,9 +49,9 @@ describe('ArtifactRegistry', () => {
 
   it('scopes artifacts per session and skips excluded paths', () => {
     const registry = new ArtifactRegistry()
-    registry.observe('s1', '/p/a.html', 100)
-    registry.observe('s2', '/p/b.html', 100)
-    registry.observe('s1', '/p/node_modules/x.js', 100)
+    registry.observe('s1', '/p', '/p/a.html', 100)
+    registry.observe('s2', '/p', '/p/b.html', 100)
+    registry.observe('s1', '/p', '/p/node_modules/x.js', 100)
     expect(registry.list('s1')).toHaveLength(1)
     expect(registry.list('s2')).toHaveLength(1)
     expect(registry.list('none')).toEqual([])
@@ -59,9 +59,9 @@ describe('ArtifactRegistry', () => {
 
   it('sorts newest first', () => {
     const registry = new ArtifactRegistry()
-    registry.observe('s1', '/p/a.html', 100)
-    registry.observe('s1', '/p/b.svg', 300)
-    registry.observe('s1', '/p/c.png', 200)
+    registry.observe('s1', '/p', '/p/a.html', 100)
+    registry.observe('s1', '/p', '/p/b.svg', 300)
+    registry.observe('s1', '/p', '/p/c.png', 200)
     expect(registry.list('s1').map(a => a.path)).toEqual(['/p/b.svg', '/p/c.png', '/p/a.html'])
   })
 })

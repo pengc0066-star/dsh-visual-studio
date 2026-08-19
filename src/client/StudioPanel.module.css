@@ -457,6 +457,18 @@
   word-break: break-word;
 }
 
+.annotationSelection {
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--vs-text-secondary);
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--vs-bg-surface);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .statusPending {
   align-self: flex-start;
   font-size: 11px;
@@ -548,9 +560,11 @@
 
 .artifactsBar {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 4px 8px;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  min-width: 0;
+  padding: 0 8px;
   border: 1px solid var(--vs-border);
   border-radius: 8px;
   background: var(--vs-bg);
@@ -560,7 +574,8 @@
 .artifactsHeader {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  flex: none;
 }
 
 .artifactsTitle {
@@ -590,16 +605,24 @@
 
 .artifactsList {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: thin;
 }
 
 .artifactItem {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex: none;
   max-width: 240px;
-  padding: 3px 8px;
+  height: 30px;
+  padding: 0 8px;
   border: 1px solid var(--vs-border);
   border-radius: 6px;
   background: var(--vs-bg);
@@ -636,7 +659,6 @@
 
 .artifactName {
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

@@ -30,6 +30,18 @@ function preciseTime(at: number): string {
   return new Date(at).toLocaleString()
 }
 
+/** Middle-truncate a basename, keeping its extension intact. */
+function middleTruncate(name: string, max: number): string {
+  if (name.length <= max) return name
+  const dot = name.lastIndexOf('.')
+  const ext = dot > 0 ? name.slice(dot) : ''
+  const stem = dot > 0 ? name.slice(0, dot) : name
+  const budget = Math.max(3, max - ext.length - 1)
+  const head = Math.ceil(budget / 2)
+  const tail = budget - head
+  return `${stem.slice(0, head)}…${stem.slice(stem.length - tail)}${ext}`
+}
+
 /** A small file-type glyph for one artifact kind. */
 function kindIcon(kind: ArtifactRecord['kind']) {
   const common = { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true } as const
@@ -102,10 +114,10 @@ export function ArtifactsBar({ sessionId, useOpen, listArtifacts, openFile }: Ar
               type="button"
               className={artifact.path === currentPath ? `${styles.artifactItem} ${styles.artifactItemActive}` : styles.artifactItem}
               onClick={() => openFile(artifact.path)}
-              title={`${artifact.path}\n创建: ${preciseTime(artifact.createdAt)}\n更新: ${preciseTime(artifact.updatedAt)}\n版本: v${artifact.version}`}
+              title={`${artifact.name}（${artifact.relativePath || artifact.path}）\n版本: v${artifact.version}\n创建: ${preciseTime(artifact.createdAt)}\n更新: ${preciseTime(artifact.updatedAt)}`}
             >
               <span className={styles.artifactIcon}>{kindIcon(artifact.kind)}</span>
-              <span className={styles.artifactName}>{artifact.name}</span>
+              <span className={styles.artifactName}>{middleTruncate(artifact.name, 24)}</span>
               <span className={styles.artifactMeta}>v{artifact.version} · {relativeTime(artifact.updatedAt)}</span>
             </button>
           ))}

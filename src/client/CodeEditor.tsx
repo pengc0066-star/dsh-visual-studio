@@ -9,10 +9,14 @@ import { useCallback, useMemo, useRef } from 'react'
 import { highlightHtml } from './highlighter.ts'
 import styles from './StudioPanel.module.css'
 
-/** A text selection in the editor, as line numbers plus the selected text. */
+/** A text selection in the editor, as offsets, line/column, and the selected text. */
 export interface EditorSelection {
   startLine: number
   endLine: number
+  startColumn: number
+  endColumn: number
+  startOffset: number
+  endOffset: number
   text: string
 }
 
@@ -51,10 +55,16 @@ export function CodeEditor({ value, onChange, placeholder, onSelectionChange }: 
       onSelectionChange(null)
       return
     }
-    const lineOf = (index: number): number => value.slice(0, index).split('\n').length
+    const before = (offset: number): string => value.slice(0, offset)
+    const lineOf = (offset: number): number => before(offset).split('\n').length
+    const columnOf = (offset: number): number => offset - before(offset).lastIndexOf('\n')
     onSelectionChange({
       startLine: lineOf(start),
       endLine: lineOf(end),
+      startColumn: columnOf(start),
+      endColumn: columnOf(end),
+      startOffset: start,
+      endOffset: end,
       text: value.slice(start, end),
     })
   }, [value, onSelectionChange])
@@ -72,7 +82,7 @@ export function CodeEditor({ value, onChange, placeholder, onSelectionChange }: 
           onChange={event => onChange(event.target.value)}
           onScroll={event => syncScroll(event.currentTarget.scrollTop, event.currentTarget.scrollLeft)}
           onSelect={event => reportSelection(event.currentTarget)}
-          onBlur={() => onSelectionChange?.(null)}
+          onKeyUp={event => { if (event.shiftKey) reportSelection(event.currentTarget) }}
           spellCheck={false}
           wrap="off"
           autoCapitalize="off"
