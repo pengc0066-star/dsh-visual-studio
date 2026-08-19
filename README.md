@@ -11,10 +11,11 @@ Visual HTML/SVG Studio（可视化 HTML/SVG 工作室）是一个持久化的 De
 - **打开 / 新建 / 保存** 工作区内的 `.html` / `.htm` / `.svg` 文件。
 - **实时预览**：源码编辑器旁是隔离 iframe 预览（`sandbox="allow-scripts"`、无 `allow-same-origin`，预览脚本运行在独立源，无法访问父页面 DOM / Cookie）。
 - **元素检查模式**：在预览中点击任意 HTML/SVG 元素，显示选框、元素路径、稳定 selector、尺寸与主要 computed styles。
-- **手动批注**：对选中元素或页面坐标添加批注（如「这里间距太大」「这个图标不对」），提交后连同文件路径、selector、元素 HTML/SVG、computed styles、位置尺寸与批注文字一起送回当前 Agent 会话。
+- **会话产物中心**：编写区上方有产物栏，自动追踪当前会话 Agent 创建/修改的文件（显示相对路径、版本、更新时间，点击即打开），按 HTML/SVG、图片、文本分派到对应编辑器；图片可点选/框选定位，文本可在编辑器中选中段落。
+- **手动批注**：对选中元素、图片坐标或代码选区添加批注，提交时连同文件相对路径、版本、类型、定位（selector / 坐标 / 行列范围）与选中文本一起送回当前 Agent 会话。
 - **自动刷新 + 状态保留**：Agent 修改源码后自动刷新预览，批注的「已处理 / 未处理」状态保留。
 - **撤销 / 重做 / 保存 / 刷新 / 桌面-手机视口切换**。
-- **版本备份**：覆盖文件前把旧内容写到同目录 `.dsh-visual-studio-backup-<时间戳>`，可恢复。
+- **版本备份与恢复**：覆盖文件前把旧内容写到同目录 `.dsh-visual-studio-backup-<时间戳>`，可一键恢复上一版本。
 
 ### 快速开始
 
@@ -48,12 +49,18 @@ and agent-routed annotations.
   parent-DOM or cookie access), beside a source editor.
 - **Element inspector**: click any element in the preview to see a highlight
   box, breadcrumb path, stable CSS selector, size, and selected computed styles.
-- **Annotations**: attach a note to an inspected element (or page coordinate)
-  and submit it to the current agent session as an ordinary user message; the
-  pending/processed state is kept across preview refreshes.
+- **Session artifacts center**: an artifacts bar above the composer tracks the
+  files the current session's agent creates or edits (relative path, version,
+  update time) and opens each by type — HTML/SVG preview, image point/box
+  select, or text selection.
+- **Annotations**: attach a note to an inspected element, an image coordinate,
+  or a text selection; the submitted message carries the file's relative path,
+  version, kind, location (selector / coordinates / line-column range), and the
+  selected text.
 - **Undo / redo / save / refresh / desktop-mobile viewport** controls.
 - **Versioned backups**: before overwriting a file, the previous content is
-  written to a sibling `.dsh-visual-studio-backup-<timestamp>` file.
+  written to a sibling `.dsh-visual-studio-backup-<timestamp>` file and can be
+  restored with one click.
 
 ## Architecture
 
@@ -61,7 +68,9 @@ A dual-face Cordis plugin (one package, two halves):
 
 - **Node half** (`src/index.ts`, host tree): registers the `/visual-studio`
   Connection RPC channel (`authority: loopback`) serving `list` / `read` /
-  `write` / `create`. Every target path is containment-checked against the
+  `write` / `create` / `artifacts.list` / `backups.restore`, and records each
+  session's deliverable artifacts (path, version, relative path) from the
+  `fs/observed` event. Every target path is containment-checked against the
   workspace root before any read or write.
 - **Browser half** (`src/client/`, client tree): registers the `StudioPanel`
   into the `shell.overlay` slot and injects the file/session callbacks over
@@ -126,5 +135,7 @@ Remove the row from `$DSH_HOME/profiles/web/cordis.patch.yml` and delete the
   are confined to an opaque origin but are not sanitized.
 - Undo history and annotation state are session-local (annotations persist via
   `localStorage`; undo history does not survive a page reload).
+- The session artifacts registry is in-memory: it resets when `dsh web`
+  restarts and repopulates as the agent writes files again.
 - The `dsh.bundle` patch is dormant when installed through a profile patch
   layer rather than `dsh plugin add`.
