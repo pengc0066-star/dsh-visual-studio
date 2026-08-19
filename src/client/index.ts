@@ -66,6 +66,7 @@ function createFileFace(ctx: ClientContext): StudioInjected {
       readFileBytes: unavailable,
       writeFile: unavailable,
       createFile: unavailable,
+      restorePrevious: async () => ({ restored: false }),
       submitAnnotation: async () => false,
       listArtifacts: async () => [],
     }
@@ -96,6 +97,9 @@ function createFileFace(ctx: ClientContext): StudioInjected {
     createFile: async (root, path) => {
       const value = await call('create', { root, path }) as { path: string }
       return value.path
+    },
+    restorePrevious: async (root, path) => {
+      return await call('backups.restore', { root, path }) as { restored: boolean }
     },
     submitAnnotation: async (sessionId, text) => {
       const response = await connection.api.sessions.prompt({

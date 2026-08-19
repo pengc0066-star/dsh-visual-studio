@@ -516,15 +516,32 @@
 
 /* ── image preview ───────────────────────────────────────────────────────── */
 
-.imagePreview {
+.imageStage {
+  position: relative;
   flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px;
+}
+
+.imagePreview {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-  margin: auto;
   transform-origin: center center;
   cursor: crosshair;
   background: repeating-conic-gradient(#f6f7f9 0% 25%, #f2f4f7 0% 50%) 0 0 / 24px 24px;
+  user-select: none;
+}
+
+.imageBoxOverlay {
+  position: absolute;
+  pointer-events: none;
+  border: 1.5px dashed var(--vs-accent);
+  background: color-mix(in srgb, var(--vs-accent) 12%, transparent);
 }
 
 /* ── artifacts bar (above the composer) ──────────────────────────────────── */

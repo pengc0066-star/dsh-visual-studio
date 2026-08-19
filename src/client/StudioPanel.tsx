@@ -11,6 +11,7 @@ import type { MouseEvent as ReactMouseEvent } from 'react'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionListState, WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
 import { CodeEditor } from './CodeEditor.tsx'
+import type { EditorSelection } from './CodeEditor.tsx'
 import { formatAnnotationMessage, imageMime, kindOfPath } from './studio.ts'
 import type { Annotation, AnnotationMeta, InspectPayload, StudioPanelFace, StudioState } from './studio.ts'
 import { INSPECT_EVENT, INSPECT_TOGGLE, ZOOM_EVENT, previewDocument } from './inspector.ts'
@@ -66,7 +67,7 @@ function loadAnnotations(): Annotation[] {
 }
 
 export function StudioPanel(props: StudioPanelProps) {
-  const { useSessions, useOpen, listFiles, readFile, readFileBytes, writeFile, createFile, submitAnnotation, listArtifacts, close, consumePendingFile } = props
+  const { useSessions, useOpen, listFiles, readFile, readFileBytes, writeFile, createFile, restorePrevious, submitAnnotation, listArtifacts, close, consumePendingFile } = props
   const open = useOpen(value => value.open)
   const sessionId = useSessions(s => s.current)
   const cwd = useSessions(s => (s.current === undefined ? undefined : s.byId[s.current]?.cwd))
@@ -79,6 +80,7 @@ export function StudioPanel(props: StudioPanelProps) {
   const [preview, setPreview] = useState('')
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [imageBox, setImageBox] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
+  const [textSelection, setTextSelection] = useState<EditorSelection | null>(null)
   const [saved, setSaved] = useState('')
   const [history, setHistory] = useState<string[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
@@ -92,6 +94,7 @@ export function StudioPanel(props: StudioPanelProps) {
 
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const editTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const imageDrag = useRef<{ x: number; y: number } | null>(null)
 
   const currentKind = currentFile === null ? null : kindOfPath(currentFile)
   const srcdoc = useMemo(() => previewDocument(preview), [preview])
@@ -269,14 +272,52 @@ export function StudioPanel(props: StudioPanelProps) {
     }
   }, [cwd, createFile, openFile])
 
-  /** Record a point/box annotation on the image preview (normalized %). */
-  const onImageClick = useCallback((event: ReactMouseEvent<HTMLImageElement>) => {
+  /** Normalized image coordinates from a mouse event, in percent. */
+  const imagePoint = useCallback((event: ReactMouseEvent<HTMLImageElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
     const x = Math.round(((event.clientX - rect.left) / rect.width) * 100)
     const y = Math.round(((event.clientY - rect.top) / rect.height) * 100)
-    setImageBox({ x, y, width: 0, height: 0 })
-    setSelected(null)
+    return { x, y }
   }, [])
+
+  const onImageMouseDown = useCallback((event: ReactMouseEvent<HTMLImageElement>) => {
+    const point = imagePoint(event)
+    imageDrag.current = point
+    setImageBox({ x: point.x, y: point.y, width: 0, height: 0 })
+    setSelected(null)
+  }, [imagePoint])
+
+  const onImageMouseMove = useCallback((event: ReactMouseEvent<HTMLImageElement>) => {
+    const start = imageDrag.current
+    if (start === null) return
+    const point = imagePoint(event)
+    setImageBox({
+      x: Math.min(start.x, point.x),
+      y: Math.min(start.y, point.y),
+      width: Math.abs(point.x - start.x),
+      height: Math.abs(point.y - start.y),
+    })
+  }, [imagePoint])
+
+  const onImageMouseUp = useCallback(() => {
+    imageDrag.current = null
+  }, [])
+
+  /** Restore the most recent pre-overwrite backup over the open file. */
+  const restore = useCallback(async () => {
+    if (cwd === undefined || currentFile === null) return
+    try {
+      const result = await restorePrevious(cwd, currentFile)
+      if (!result.restored) {
+        setError('没有可恢复的上一版本')
+        return
+      }
+      await openFile(currentFile)
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    }
+  }, [cwd, currentFile, restorePrevious, openFile])
 
   /** Submit the current annotation back to the agent session. */
   const submitNote = useCallback(async () => {
@@ -293,7 +334,10 @@ export function StudioPanel(props: StudioPanelProps) {
       ...(currentVersion !== undefined ? { version: currentVersion } : {}),
       ...(currentKind !== null ? { kind: currentKind } : {}),
       ...(currentKind === 'image' && imageBox !== null
-        ? { location: `x=${imageBox.x}% y=${imageBox.y}%` }
+        ? { location: imageBox.width === 0 && imageBox.height === 0 ? `x=${imageBox.x}% y=${imageBox.y}%` : `x=${imageBox.x}% y=${imageBox.y}% w=${imageBox.width}% h=${imageBox.height}%` }
+        : {}),
+      ...(currentKind !== 'image' && currentKind !== 'html' && currentKind !== 'svg' && textSelection !== null
+        ? { location: `L${textSelection.startLine}-L${textSelection.endLine}` }
         : {}),
     }
     const message = formatAnnotationMessage(currentFile, selected, note.trim(), meta)
@@ -381,6 +425,7 @@ export function StudioPanel(props: StudioPanelProps) {
             <button type="button" className={styles.btn} onClick={createNew}>新建</button>
             <button type="button" className={styles.btn} onClick={save} disabled={currentFile === null || !isDirty}>保存</button>
             <button type="button" className={styles.btn} onClick={refresh} disabled={currentFile === null}>刷新</button>
+            <button type="button" className={styles.btn} data-tooltip="恢复上一版本" onClick={() => void restore()} disabled={currentFile === null}>恢复</button>
           </div>
 
           <div className={styles.toolbarDivider} />
@@ -441,7 +486,7 @@ export function StudioPanel(props: StudioPanelProps) {
               ? <div className={styles.emptyState}>选择文件后在此编辑源码</div>
               : currentKind === 'image'
                 ? <div className={styles.emptyState}>图片文件（无源码编辑）</div>
-                : <CodeEditor value={content} onChange={onEdit} placeholder="在此编辑源码" />)}
+                : <CodeEditor value={content} onChange={onEdit} placeholder="在此编辑源码" onSelectionChange={setTextSelection} />)}
           </div>
 
           <div className={styles.codeDivider}>
@@ -472,7 +517,27 @@ export function StudioPanel(props: StudioPanelProps) {
             {currentFile === null
               ? <div className={styles.emptyState}>选择文件后在此预览</div>
               : currentKind === 'image'
-                ? <img className={styles.imagePreview} src={imageUrl ?? undefined} alt={currentFile} onClick={onImageClick} style={{ transform: `scale(${zoom})` }} />
+                ? (
+                  <div className={styles.imageStage}>
+                    <img
+                      className={styles.imagePreview}
+                      src={imageUrl ?? undefined}
+                      alt={currentFile}
+                      draggable={false}
+                      onMouseDown={onImageMouseDown}
+                      onMouseMove={onImageMouseMove}
+                      onMouseUp={onImageMouseUp}
+                      onMouseLeave={onImageMouseUp}
+                      style={{ transform: `scale(${zoom})` }}
+                    />
+                    {imageBox !== null && (imageBox.width > 0 || imageBox.height > 0) && (
+                      <div
+                        className={styles.imageBoxOverlay}
+                        style={{ left: `${imageBox.x}%`, top: `${imageBox.y}%`, width: `${imageBox.width}%`, height: `${imageBox.height}%` }}
+                      />
+                    )}
+                  </div>
+                )
                 : currentKind === 'html' || currentKind === 'svg'
                   ? (
                     <iframe
@@ -491,17 +556,23 @@ export function StudioPanel(props: StudioPanelProps) {
               <div className={styles.sectionTitle}>元素检查</div>
               {currentKind === 'image' ? (
                 imageBox === null
-                  ? <div className={styles.kv}>点击图片进行点选批注</div>
-                  : <div className={styles.kv}><span className={styles.kvLabel}>定位 </span>x={imageBox.x}% y={imageBox.y}%</div>
-              ) : selected === null ? (
-                <div className={styles.kv}>在预览中开启「元素检查」后点击任意元素</div>
+                  ? <div className={styles.kv}>点击或拖拽图片进行点选/框选批注</div>
+                  : <div className={styles.kv}><span className={styles.kvLabel}>定位 </span>x={imageBox.x}% y={imageBox.y}%{imageBox.width > 0 || imageBox.height > 0 ? ` w=${imageBox.width}% h=${imageBox.height}%` : ''}</div>
+              ) : currentKind === 'html' || currentKind === 'svg' ? (
+                selected === null
+                  ? <div className={styles.kv}>在预览中开启「元素检查」后点击任意元素</div>
+                  : (
+                    <>
+                      <div className={styles.kv}><span className={styles.kvLabel}>标签 </span>{selected.tag}</div>
+                      <div className={styles.kv}><span className={styles.kvLabel}>路径 </span>{selected.path}</div>
+                      <div className={styles.kv}><span className={styles.kvLabel}>选择器 </span>{selected.selector}</div>
+                      <div className={styles.kv}><span className={styles.kvLabel}>尺寸 </span>{selected.rect.width}×{selected.rect.height}</div>
+                    </>
+                  )
               ) : (
-                <>
-                  <div className={styles.kv}><span className={styles.kvLabel}>标签 </span>{selected.tag}</div>
-                  <div className={styles.kv}><span className={styles.kvLabel}>路径 </span>{selected.path}</div>
-                  <div className={styles.kv}><span className={styles.kvLabel}>选择器 </span>{selected.selector}</div>
-                  <div className={styles.kv}><span className={styles.kvLabel}>尺寸 </span>{selected.rect.width}×{selected.rect.height}</div>
-                </>
+                textSelection === null
+                  ? <div className={styles.kv}>在左侧编辑器中选中文本后批注</div>
+                  : <div className={styles.kv}><span className={styles.kvLabel}>定位 </span>L{textSelection.startLine}-L{textSelection.endLine}</div>
               )}
             </div>
 

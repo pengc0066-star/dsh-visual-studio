@@ -11,7 +11,7 @@
  */
 
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
 import type { RpcResult } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { ArtifactRegistry } from './artifact-service.ts'
@@ -160,6 +160,33 @@ export async function createSourceFile(root: string, path: string): Promise<stri
   return target
 }
 
+/** List a file's pre-overwrite backups, oldest first. */
+export async function listBackups(root: string, path: string): Promise<string[]> {
+  const target = assertWithinWorkspace(root, path)
+  const prefix = `${basename(target)}${BACKUP_MARKER}`
+  const entries = await readdir(dirname(target))
+  return entries
+    .filter(name => name.startsWith(prefix))
+    .map(name => join(dirname(target), name))
+    .sort()
+}
+
+/**
+ * Restore the most recent backup over the file, keeping a fresh backup of the
+ * current content first.
+ * @param root - absolute workspace root.
+ * @param path - absolute target file path.
+ * @returns whether a backup was restored, plus the backup path used.
+ */
+export async function restorePrevious(root: string, path: string): Promise<{ restored: boolean; backup?: string }> {
+  const backups = await listBackups(root, path)
+  if (backups.length === 0) return { restored: false }
+  const latest = backups[backups.length - 1] as string
+  const content = await readFile(latest, 'utf8')
+  await writeSourceFile(root, path, content)
+  return { restored: true, backup: latest }
+}
+
 /** Fold a thrown error into a failure result with a valid RPC error code. */
 function failureOf(error: unknown): RpcResult<unknown> {
   if (error instanceof WorkspacePathError) {
@@ -214,6 +241,10 @@ export function createStudioHandler(registry?: ArtifactRegistry): ConnectionRpcH
           const { sessionId } = payload as { sessionId: string }
           const artifacts = registry === undefined ? [] : registry.list(sessionId)
           return { ok: true, value: { artifacts } }
+        }
+        case 'backups.restore': {
+          const { root, path } = parseTarget(payload)
+          return { ok: true, value: await restorePrevious(root, path) }
         }
         default:
           return { ok: false, error: { code: 'internal', message: `unknown visual-studio endpoint: ${endpoint}`, details: {} } }

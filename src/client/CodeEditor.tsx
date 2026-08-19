@@ -9,13 +9,21 @@ import { useCallback, useMemo, useRef } from 'react'
 import { highlightHtml } from './highlighter.ts'
 import styles from './StudioPanel.module.css'
 
+/** A text selection in the editor, as line numbers plus the selected text. */
+export interface EditorSelection {
+  startLine: number
+  endLine: number
+  text: string
+}
+
 export interface CodeEditorProps {
   value: string
   onChange(next: string): void
   placeholder?: string
+  onSelectionChange?(selection: EditorSelection | null): void
 }
 
-export function CodeEditor({ value, onChange, placeholder }: CodeEditorProps) {
+export function CodeEditor({ value, onChange, placeholder, onSelectionChange }: CodeEditorProps) {
   const preRef = useRef<HTMLPreElement>(null)
   const gutterRef = useRef<HTMLDivElement>(null)
 
@@ -35,6 +43,22 @@ export function CodeEditor({ value, onChange, placeholder }: CodeEditorProps) {
     if (gutter !== null) gutter.scrollTop = scrollTop
   }, [])
 
+  const reportSelection = useCallback((textarea: HTMLTextAreaElement) => {
+    if (onSelectionChange === undefined) return
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    if (start === end) {
+      onSelectionChange(null)
+      return
+    }
+    const lineOf = (index: number): number => value.slice(0, index).split('\n').length
+    onSelectionChange({
+      startLine: lineOf(start),
+      endLine: lineOf(end),
+      text: value.slice(start, end),
+    })
+  }, [value, onSelectionChange])
+
   return (
     <div className={styles.codeEditor}>
       <div className={styles.gutter} ref={gutterRef} aria-hidden>
@@ -47,6 +71,8 @@ export function CodeEditor({ value, onChange, placeholder }: CodeEditorProps) {
           value={value}
           onChange={event => onChange(event.target.value)}
           onScroll={event => syncScroll(event.currentTarget.scrollTop, event.currentTarget.scrollLeft)}
+          onSelect={event => reportSelection(event.currentTarget)}
+          onBlur={() => onSelectionChange?.(null)}
           spellCheck={false}
           wrap="off"
           autoCapitalize="off"

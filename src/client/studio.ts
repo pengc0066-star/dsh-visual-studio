@@ -57,6 +57,8 @@ export interface StudioInjected {
   writeFile(root: string, path: string, content: string): Promise<{ backup?: string }>
   /** Create one empty workspace file (refuses to overwrite). */
   createFile(root: string, path: string): Promise<string>
+  /** Restore the most recent pre-overwrite backup over the file. */
+  restorePrevious(root: string, path: string): Promise<{ restored: boolean }>
   /** Send the annotation text to the current agent session as a user message. */
   submitAnnotation(sessionId: string, text: string): Promise<boolean>
   /** List the current session's deliverable artifacts. */
