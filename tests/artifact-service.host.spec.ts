@@ -64,4 +64,15 @@ describe('ArtifactRegistry', () => {
     registry.observe('s1', '/p', '/p/c.png', 200)
     expect(registry.list('s1').map(a => a.path)).toEqual(['/p/b.svg', '/p/c.png', '/p/a.html'])
   })
+
+  it('computes the workspace-relative path from cwd', () => {
+    const registry = new ArtifactRegistry()
+    registry.observe('s1', '/p', '/p/index.html', 100)
+    registry.observe('s1', '/p', '/p/sub/a.html', 200)
+    registry.observe('s1', undefined, '/p/orphan.svg', 300)
+    const byPath = new Map(registry.list('s1').map(a => [a.path, a]))
+    expect(byPath.get('/p/index.html')?.relativePath).toBe('index.html')
+    expect(byPath.get('/p/sub/a.html')?.relativePath).toBe('sub/a.html')
+    expect(byPath.get('/p/orphan.svg')?.relativePath).toBe('')
+  })
 })

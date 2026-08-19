@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from 'react'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import { middleTruncate } from './studio.ts'
 import type { ArtifactRecord, StudioState } from './studio.ts'
 import styles from './StudioPanel.module.css'
 
@@ -28,18 +29,6 @@ function relativeTime(at: number): string {
 /** Precise timestamp for the hover tooltip. */
 function preciseTime(at: number): string {
   return new Date(at).toLocaleString()
-}
-
-/** Middle-truncate a basename, keeping its extension intact. */
-function middleTruncate(name: string, max: number): string {
-  if (name.length <= max) return name
-  const dot = name.lastIndexOf('.')
-  const ext = dot > 0 ? name.slice(dot) : ''
-  const stem = dot > 0 ? name.slice(0, dot) : name
-  const budget = Math.max(3, max - ext.length - 1)
-  const head = Math.ceil(budget / 2)
-  const tail = budget - head
-  return `${stem.slice(0, head)}…${stem.slice(stem.length - tail)}${ext}`
 }
 
 /** A small file-type glyph for one artifact kind. */

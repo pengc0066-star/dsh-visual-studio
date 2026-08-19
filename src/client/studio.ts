@@ -182,6 +182,24 @@ export function truncate(value: string, max: number): string {
   return `${value.slice(0, max)}…`
 }
 
+/**
+ * Middle-truncate a file basename, keeping its extension intact so the type
+ * stays recognizable in the compact artifacts bar.
+ * @param name - the basename to truncate.
+ * @param max - maximum result length.
+ * @returns the middle-truncated name, unchanged when it already fits.
+ */
+export function middleTruncate(name: string, max: number): string {
+  if (name.length <= max) return name
+  const dot = name.lastIndexOf('.')
+  const ext = dot > 0 ? name.slice(dot) : ''
+  const stem = dot > 0 ? name.slice(0, dot) : name
+  const budget = Math.max(3, max - ext.length - 1)
+  const head = Math.ceil(budget / 2)
+  const tail = budget - head
+  return `${stem.slice(0, head)}…${stem.slice(stem.length - tail)}${ext}`
+}
+
 /** Render one computed-style entry as `key: value`. */
 function styleLine(entry: [string, string]): string {
   return `${entry[0]}: ${entry[1]}`
