@@ -31,8 +31,10 @@ export type AnnotationStatus = 'pending' | 'processed'
 export interface Annotation {
   /** Stable client-generated id. */
   id: string
-  /** Absolute path of the source file the annotation addresses. */
+  /** Artifact id (absolute path) the annotation addresses. */
   filePath: string
+  /** Artifact version at submission time, when known. */
+  version?: number
   /** The inspected element's stable selector (empty for page-coordinate notes). */
   selector: string
   /** The inspected element facts at submission time. */
@@ -107,11 +109,23 @@ export function imageMime(path: string): string {
   return map[ext] ?? 'application/octet-stream'
 }
 
+/** Normalize to `/` separators and return the workspace-relative path (or the path itself). */
+export function relativePathOf(root: string | undefined, path: string): string {
+  const normalized = path.replaceAll('\\', '/')
+  if (root === undefined) return normalized
+  const base = root.replaceAll('\\', '/').replace(/\/+$/, '')
+  if (normalized === base) return ''
+  if (normalized.startsWith(`${base}/`)) return normalized.slice(base.length + 1)
+  return normalized
+}
+
 /** The Studio open-state snapshot shared between the entry button, bar, and panel. */
 export interface StudioState {
   open: boolean
   /** A file queued to open once the panel mounts (set by the artifacts bar). */
   pendingFile: string | null
+  /** The file currently open in the Studio (absolute path), for selected state. */
+  currentPath: string | null
 }
 
 /**
@@ -125,15 +139,18 @@ export interface OpenController {
   toggle(): void
   setOpen(open: boolean): void
   openFile(path: string): void
+  setCurrentPath(path: string | null): void
   consumePendingFile(): string | null
 }
 
-/** The panel's inject face: the file/session callbacks plus a close verb. */
+/** The panel's inject face: the file/session callbacks plus close/state verbs. */
 export interface StudioPanelFace extends StudioInjected {
   /** Hide the Studio panel. */
   close(): void
   /** Take (and clear) the file queued by the artifacts bar. */
   consumePendingFile(): string | null
+  /** Publish the currently open path so the artifacts bar can mark it selected. */
+  setCurrentPath(path: string | null): void
 }
 
 /** Maximum characters kept of an element's outerHTML in an annotation. */

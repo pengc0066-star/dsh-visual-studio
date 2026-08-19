@@ -1,15 +1,17 @@
 /**
- * The artifacts bar shown above the composer: a compact, collapsible list of
+ * The artifacts bar shown above the composer: a compact, horizontal list of
  * the files the current session's agent created or modified. Clicking an item
- * opens it in the Studio panel.
+ * opens it in the Studio panel; the currently open artifact is highlighted.
  */
 
 import { useEffect, useState } from 'react'
-import type { ArtifactRecord } from './studio.ts'
+import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ArtifactRecord, StudioState } from './studio.ts'
 import styles from './StudioPanel.module.css'
 
 export interface ArtifactsBarProps {
   sessionId: string
+  useOpen: SnapshotSelectorHook<StudioState>
   listArtifacts(sessionId: string): Promise<ArtifactRecord[]>
   openFile(path: string): void
 }
@@ -59,7 +61,8 @@ function kindIcon(kind: ArtifactRecord['kind']) {
   )
 }
 
-export function ArtifactsBar({ sessionId, listArtifacts, openFile }: ArtifactsBarProps) {
+export function ArtifactsBar({ sessionId, useOpen, listArtifacts, openFile }: ArtifactsBarProps) {
+  const currentPath = useOpen(state => state.currentPath)
   const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([])
   const [collapsed, setCollapsed] = useState(false)
 
@@ -79,21 +82,25 @@ export function ArtifactsBar({ sessionId, listArtifacts, openFile }: ArtifactsBa
 
   return (
     <div className={styles.artifactsBar}>
-      <button
-        type="button"
-        className={styles.artifactsToggle}
-        onClick={() => setCollapsed(value => !value)}
-        aria-expanded={!collapsed}
-      >
-        <span>{collapsed ? '›' : '⌄'}</span> 产物（{artifacts.length}）
-      </button>
+      <div className={styles.artifactsHeader}>
+        <span className={styles.artifactsTitle}>产物（{artifacts.length}）</span>
+        <button
+          type="button"
+          className={styles.artifactsToggle}
+          onClick={() => setCollapsed(value => !value)}
+          aria-label={collapsed ? '展开产物' : '收起产物'}
+          aria-expanded={!collapsed}
+        >
+          {collapsed ? '›' : '⌄'}
+        </button>
+      </div>
       {!collapsed && (
         <div className={styles.artifactsList}>
           {artifacts.map(artifact => (
             <button
               key={artifact.path}
               type="button"
-              className={styles.artifactItem}
+              className={artifact.path === currentPath ? `${styles.artifactItem} ${styles.artifactItemActive}` : styles.artifactItem}
               onClick={() => openFile(artifact.path)}
               title={`${artifact.path}\n创建: ${preciseTime(artifact.createdAt)}\n更新: ${preciseTime(artifact.updatedAt)}\n版本: v${artifact.version}`}
             >

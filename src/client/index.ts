@@ -25,7 +25,7 @@ export const inject = ['slots']
 
 /** Create a host-observable open-state controller (getSnapshot + subscribe + verbs). */
 function createOpenController(): OpenController {
-  let state: StudioState = { open: false, pendingFile: null }
+  let state: StudioState = { open: false, pendingFile: null, currentPath: null }
   const listeners = new Set<() => void>()
   const emit = (): void => { for (const listener of [...listeners]) listener() }
   return {
@@ -44,7 +44,12 @@ function createOpenController(): OpenController {
       emit()
     },
     openFile: (path) => {
-      state = { open: true, pendingFile: path }
+      state = { open: true, pendingFile: path, currentPath: path }
+      emit()
+    },
+    setCurrentPath: (path) => {
+      if (state.currentPath === path) return
+      state = { ...state, currentPath: path }
       emit()
     },
     consumePendingFile: () => {
@@ -134,6 +139,7 @@ export function apply(ctx: ClientContext): void {
         hooks: { open },
         close: () => open.setOpen(false),
         consumePendingFile: () => open.consumePendingFile(),
+        setCurrentPath: (path) => open.setCurrentPath(path),
         ...fileFace,
       }),
     },

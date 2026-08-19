@@ -12,7 +12,7 @@ import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionListState, WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
 import { CodeEditor } from './CodeEditor.tsx'
 import type { EditorSelection } from './CodeEditor.tsx'
-import { formatAnnotationMessage, imageMime, kindOfPath } from './studio.ts'
+import { formatAnnotationMessage, imageMime, kindOfPath, relativePathOf } from './studio.ts'
 import type { Annotation, AnnotationMeta, InspectPayload, StudioPanelFace, StudioState } from './studio.ts'
 import { INSPECT_EVENT, INSPECT_TOGGLE, ZOOM_EVENT, previewDocument } from './inspector.ts'
 import styles from './StudioPanel.module.css'
@@ -67,7 +67,7 @@ function loadAnnotations(): Annotation[] {
 }
 
 export function StudioPanel(props: StudioPanelProps) {
-  const { useSessions, useOpen, listFiles, readFile, readFileBytes, writeFile, createFile, restorePrevious, submitAnnotation, listArtifacts, close, consumePendingFile } = props
+  const { useSessions, useOpen, listFiles, readFile, readFileBytes, writeFile, createFile, restorePrevious, submitAnnotation, listArtifacts, close, consumePendingFile, setCurrentPath } = props
   const open = useOpen(value => value.open)
   const sessionId = useSessions(s => s.current)
   const cwd = useSessions(s => (s.current === undefined ? undefined : s.byId[s.current]?.cwd))
@@ -95,6 +95,7 @@ export function StudioPanel(props: StudioPanelProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const editTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const imageDrag = useRef<{ x: number; y: number } | null>(null)
+  const loadedPathRef = useRef<string | null>(null)
 
   const currentKind = currentFile === null ? null : kindOfPath(currentFile)
   const srcdoc = useMemo(() => previewDocument(preview), [preview])
@@ -136,7 +137,10 @@ export function StudioPanel(props: StudioPanelProps) {
     try {
       setSelected(null)
       setImageBox(null)
+      setTextSelection(null)
       setError(null)
+      setCurrentPath(path)
+      loadedPathRef.current = path
       if (kindOfPath(path) === 'image') {
         const base64 = await readFileBytes(cwd, path)
         setCurrentFile(path)
@@ -159,7 +163,7 @@ export function StudioPanel(props: StudioPanelProps) {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     }
-  }, [cwd, readFile, readFileBytes])
+  }, [cwd, readFile, readFileBytes, setCurrentPath])
 
   // Open the file queued by the artifacts bar (or entry button) once visible.
   useEffect(() => {
@@ -404,6 +408,21 @@ export function StudioPanel(props: StudioPanelProps) {
       ? selected !== null
       : true
 
+  // Annotations for the current document only (same artifact id).
+  const currentAnnotations = currentFile === null ? [] : annotations.filter(a => a.filePath === currentFile)
+
+  // Development assertion: the open path, loaded content source, and annotation
+  // scope must reference one document identity.
+  useEffect(() => {
+    if (currentFile !== null && loadedPathRef.current !== currentFile) {
+      console.warn(`[visual-studio] 文档身份不一致: 打开 ${currentFile}，但内容/预览来自 ${loadedPathRef.current}`)
+    }
+    const foreign = annotations.filter(a => currentFile === null || a.filePath !== currentFile)
+    if (currentFile !== null && foreign.length > 0) {
+      console.warn(`[visual-studio] 批注作用域含其他文件: ${foreign.map(a => a.filePath).join(', ')}`)
+    }
+  }, [currentFile, content, preview, imageUrl, annotations])
+
   return (
     <div className={styles.backdrop} onClick={close}>
       <div className={styles.panel} onClick={event => event.stopPropagation()}>
@@ -411,16 +430,22 @@ export function StudioPanel(props: StudioPanelProps) {
           <span className={styles.title}>Visual Studio</span>
 
           <div className={styles.toolbarGroup}>
+            <div className={styles.pathDisplay} title={currentFile ?? undefined}>
+              {currentFile === null ? '未选择文件' : relativePathOf(cwd, currentFile)}
+            </div>
             <select
               className={styles.select}
               value={currentFile ?? ''}
-              aria-label="选择文件"
+              aria-label="打开文件"
               onChange={event => { if (event.target.value !== '') void openFile(event.target.value) }}
             >
-              <option value="" disabled>选择文件…</option>
+              <option value="" disabled>打开文件…</option>
               {files.map(file => (
-                <option key={file} value={file}>{shorten(cwd, file)}</option>
+                <option key={file} value={file}>{relativePathOf(cwd, file)}</option>
               ))}
+              {currentFile !== null && !files.includes(currentFile) && (
+                <option value={currentFile}>{relativePathOf(cwd, currentFile)}</option>
+              )}
             </select>
             <button type="button" className={styles.btn} onClick={createNew}>新建</button>
             <button type="button" className={styles.btn} onClick={save} disabled={currentFile === null || !isDirty}>保存</button>
@@ -596,9 +621,9 @@ export function StudioPanel(props: StudioPanelProps) {
             </div>
 
             <div className={styles.section}>
-              <div className={styles.sectionTitle}>历史批注（{annotations.length}）</div>
-              {annotations.length === 0 && <div className={styles.kv}>暂无批注</div>}
-              {annotations.map(annotation => (
+              <div className={styles.sectionTitle}>历史批注（{currentAnnotations.length}）</div>
+              {currentAnnotations.length === 0 && <div className={styles.kv}>暂无批注</div>}
+              {currentAnnotations.map(annotation => (
                 <div key={annotation.id} className={styles.annotation}>
                   <span className={annotation.status === 'pending' ? styles.statusPending : styles.statusProcessed}>
                     {annotation.status === 'pending' ? '未处理' : '已处理'}
