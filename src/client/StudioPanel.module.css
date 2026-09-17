@@ -566,7 +566,7 @@
   min-width: 0;
   padding: 0 8px;
   border: 1px solid var(--vs-border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--vs-bg);
   margin-bottom: 8px;
 }
@@ -574,28 +574,39 @@
 .artifactsHeader {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   flex: none;
 }
 
 .artifactsTitle {
   font-size: 12px;
-  color: var(--vs-text-secondary);
+  font-weight: 600;
+  color: var(--vs-text);
   white-space: nowrap;
+}
+
+.artifactsCount {
+  flex: none;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--vs-accent-soft);
+  color: var(--vs-accent);
+  font-variant-numeric: tabular-nums;
 }
 
 .artifactsToggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border: none;
   background: transparent;
   color: var(--vs-text-caption);
   cursor: pointer;
-  font-size: 12px;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
 .artifactsToggle:hover {
@@ -613,6 +624,21 @@
   overflow-y: hidden;
   white-space: nowrap;
   scrollbar-width: thin;
+  scrollbar-color: var(--vs-border) transparent;
+  padding: 2px 0;
+}
+
+.artifactsList::-webkit-scrollbar {
+  height: 6px;
+}
+
+.artifactsList::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.artifactsList::-webkit-scrollbar-thumb {
+  background: var(--vs-border);
+  border-radius: 999px;
 }
 
 .artifactItem {
@@ -620,19 +646,25 @@
   align-items: center;
   gap: 6px;
   flex: none;
-  max-width: 240px;
+  max-width: 250px;
   height: 30px;
-  padding: 0 8px;
+  padding: 0 8px 0 9px;
   border: 1px solid var(--vs-border);
-  border-radius: 6px;
+  border-radius: 7px;
   background: var(--vs-bg);
   color: var(--vs-text);
   cursor: pointer;
   font-size: 12px;
+  transition: border-color 0.15s, background 0.15s;
 }
 
 .artifactItem:hover {
   background: var(--vs-bg-hover);
+  border-color: var(--vs-text-caption);
+}
+
+.artifactItem:active {
+  background: var(--vs-bg-surface);
 }
 
 .artifactItem:focus-visible {
@@ -646,11 +678,32 @@
   color: var(--vs-accent);
 }
 
+.artifactItemActive:hover {
+  background: var(--vs-accent-soft);
+  border-color: var(--vs-accent);
+}
+
 .artifactIcon {
   display: inline-flex;
   align-items: center;
   color: var(--vs-text-caption);
   flex: none;
+}
+
+.iconCode {
+  color: var(--vs-accent);
+}
+
+.iconImage {
+  color: #1a7f37;
+}
+
+.iconText {
+  color: var(--vs-text-secondary);
+}
+
+@media (prefers-color-scheme: dark) {
+  .iconImage { color: #7ccf92; }
 }
 
 .artifactItemActive .artifactIcon {
@@ -660,12 +713,30 @@
 .artifactName {
   overflow: hidden;
   white-space: nowrap;
+  font-weight: 500;
+}
+
+.artifactVersion {
+  flex: none;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: var(--vs-bg-surface);
+  color: var(--vs-text-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.artifactItemActive .artifactVersion {
+  background: var(--vs-accent);
+  color: #ffffff;
 }
 
 .artifactMeta {
   color: var(--vs-text-caption);
   white-space: nowrap;
   flex: none;
+  font-size: 11px;
 }
 
 /* ── top path display ────────────────────────────────────────────────────── */

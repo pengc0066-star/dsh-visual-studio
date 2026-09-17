@@ -31,9 +31,16 @@ function preciseTime(at: number): string {
   return new Date(at).toLocaleString()
 }
 
+/** CSS tone class for one artifact kind. */
+function kindTone(kind: ArtifactRecord['kind']): string | undefined {
+  if (kind === 'image') return styles.iconImage
+  if (kind === 'html' || kind === 'svg') return styles.iconCode
+  return styles.iconText
+}
+
 /** A small file-type glyph for one artifact kind. */
 function kindIcon(kind: ArtifactRecord['kind']) {
-  const common = { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true } as const
+  const common = { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true } as const
   if (kind === 'image') {
     return (
       <svg {...common}>
@@ -84,7 +91,8 @@ export function ArtifactsBar({ sessionId, useOpen, listArtifacts, openFile }: Ar
   return (
     <div className={styles.artifactsBar}>
       <div className={styles.artifactsHeader}>
-        <span className={styles.artifactsTitle}>产物（{artifacts.length}）</span>
+        <span className={styles.artifactsTitle}>产物</span>
+        <span className={styles.artifactsCount}>{artifacts.length}</span>
         <button
           type="button"
           className={styles.artifactsToggle}
@@ -92,24 +100,30 @@ export function ArtifactsBar({ sessionId, useOpen, listArtifacts, openFile }: Ar
           aria-label={collapsed ? '展开产物' : '收起产物'}
           aria-expanded={!collapsed}
         >
-          {collapsed ? '›' : '⌄'}
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.18s ease' }}>
+            <path d="m6 9 6 6 6-6" />
+          </svg>
         </button>
       </div>
       {!collapsed && (
         <div className={styles.artifactsList}>
-          {artifacts.map(artifact => (
-            <button
-              key={artifact.path}
-              type="button"
-              className={artifact.path === currentPath ? `${styles.artifactItem} ${styles.artifactItemActive}` : styles.artifactItem}
-              onClick={() => openFile(artifact.path)}
-              title={`${artifact.name}（${artifact.relativePath || artifact.path}）\n版本: v${artifact.version}\n创建: ${preciseTime(artifact.createdAt)}\n更新: ${preciseTime(artifact.updatedAt)}`}
-            >
-              <span className={styles.artifactIcon}>{kindIcon(artifact.kind)}</span>
-              <span className={styles.artifactName}>{middleTruncate(artifact.name, 24)}</span>
-              <span className={styles.artifactMeta}>v{artifact.version} · {relativeTime(artifact.updatedAt)}</span>
-            </button>
-          ))}
+          {artifacts.map(artifact => {
+            const active = artifact.path === currentPath
+            return (
+              <button
+                key={artifact.path}
+                type="button"
+                className={active ? `${styles.artifactItem} ${styles.artifactItemActive}` : styles.artifactItem}
+                onClick={() => openFile(artifact.path)}
+                title={`${artifact.name}（${artifact.relativePath || artifact.path}）\n版本: v${artifact.version}\n创建: ${preciseTime(artifact.createdAt)}\n更新: ${preciseTime(artifact.updatedAt)}`}
+              >
+                <span className={`${styles.artifactIcon} ${kindTone(artifact.kind)}`}>{kindIcon(artifact.kind)}</span>
+                <span className={styles.artifactName}>{middleTruncate(artifact.name, 24)}</span>
+                <span className={styles.artifactVersion}>v{artifact.version}</span>
+                <span className={styles.artifactMeta}>{relativeTime(artifact.updatedAt)}</span>
+              </button>
+            )
+          })}
         </div>
       )}
     </div>
