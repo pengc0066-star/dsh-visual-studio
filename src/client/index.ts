@@ -15,6 +15,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { StudioPanel } from './StudioPanel.tsx'
 import { StudioEntryButton } from './StudioEntryButton.tsx'
 import { ArtifactsBar } from './ArtifactsBar.tsx'
+import { StudioRpcError } from './studio.ts'
 import type { ArtifactRecord, OpenController, StudioInjected, StudioPanelFace, StudioState } from './studio.ts'
 
 /** The logical RPC channel the node half serves (protocol constant, shared by name). */
@@ -81,7 +82,7 @@ function createFileFace(ctx: ClientContext): StudioInjected {
 
   const call = async (endpoint: string, payload: unknown): Promise<unknown> => {
     const result = await connection.rpc.call(STUDIO_CHANNEL, endpoint, payload)
-    if (!result.ok) throw new Error(result.error.message)
+    if (!result.ok) throw new StudioRpcError(result.error.message, result.error.code)
     return result.value
   }
 
@@ -91,29 +92,45 @@ function createFileFace(ctx: ClientContext): StudioInjected {
       return value.files
     },
     readFile: async (root, path) => {
-      const value = await call('read', { root, path }) as { content: string }
-      return value.content
+      return await call('read', { root, path }) as { content: string; hash: string }
     },
     readFileBytes: async (root, path) => {
       const value = await call('readBytes', { root, path }) as { base64: string }
       return value.base64
     },
-    writeFile: async (root, path, content) => {
-      return await call('write', { root, path, content }) as { backup?: string }
+    writeFile: async (root, path, content, expectedHash, sessionId) => {
+      return await call('write', {
+        root,
+        path,
+        content,
+        ...(expectedHash !== undefined ? { expectedHash } : {}),
+        ...(sessionId !== undefined ? { sessionId } : {}),
+      }) as { backup?: string; hash: string }
     },
     createFile: async (root, path) => {
       const value = await call('create', { root, path }) as { path: string }
       return value.path
     },
-    restorePrevious: async (root, path) => {
-      return await call('backups.restore', { root, path }) as { restored: boolean }
+    restorePrevious: async (root, path, expectedHash, sessionId) => {
+      return await call('backups.restore', {
+        root,
+        path,
+        ...(expectedHash !== undefined ? { expectedHash } : {}),
+        ...(sessionId !== undefined ? { sessionId } : {}),
+      }) as { restored: boolean; hash?: string }
     },
     listBackups: async (root, path) => {
       const value = await call('backups.list', { root, path }) as { backups: string[] }
       return value.backups
     },
-    restoreBackup: async (root, path, backupPath) => {
-      return await call('backups.restore', { root, path, backup: backupPath }) as { restored: boolean }
+    restoreBackup: async (root, path, backupPath, expectedHash, sessionId) => {
+      return await call('backups.restore', {
+        root,
+        path,
+        backup: backupPath,
+        ...(expectedHash !== undefined ? { expectedHash } : {}),
+        ...(sessionId !== undefined ? { sessionId } : {}),
+      }) as { restored: boolean; hash?: string }
     },
     submitAnnotation: async (sessionId, text) => {
       const response = await connection.api.sessions.prompt({

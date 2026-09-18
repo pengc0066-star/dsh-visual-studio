@@ -6,9 +6,12 @@ import {
   assertWithinWorkspace,
   createSourceFile,
   createStudioHandler,
+  FileConflictError,
+  hashContent,
   listBackups,
   listSourceFiles,
   readSourceFile,
+  readSourceFileVersioned,
   restoreBackup,
   writeSourceFile,
   WorkspacePathError,
@@ -100,7 +103,7 @@ describe('createStudioHandler', () => {
     })
     await expect(handler('read', { root, path: join(root, 'a.html') }, new AbortController().signal)).resolves.toEqual({
       ok: true,
-      value: { content: 'v1' },
+      value: { content: 'v1', hash: hashContent('v1') },
     })
     const write = await handler('write', { root, path: join(root, 'a.html'), content: 'v2' }, new AbortController().signal)
     expect(write.ok).toBe(true)
@@ -150,5 +153,59 @@ describe('backup list and restore', () => {
     const restore = await handler('backups.restore', { root, path: join(root, 'a.html'), backup: backups[0] }, new AbortController().signal)
     expect(restore.ok).toBe(true)
     await expect(readFile(join(root, 'a.html'), 'utf8')).resolves.toBe('v1')
+  })
+})
+
+describe('write consistency protection', () => {
+  it('writes normally when the expected hash matches and returns the new hash', async () => {
+    await writeFile(join(root, 'a.html'), 'v1')
+    const { content, hash } = await readSourceFileVersioned(root, join(root, 'a.html'))
+    expect(content).toBe('v1')
+
+    const result = await writeSourceFile(root, join(root, 'a.html'), 'v2', hash)
+    expect(result.hash).toBe(hashContent('v2'))
+    await expect(readFile(join(root, 'a.html'), 'utf8')).resolves.toBe('v2')
+  })
+
+  it('blocks an old-version save after the file was modified', async () => {
+    await writeFile(join(root, 'a.html'), 'v1')
+    const { hash } = await readSourceFileVersioned(root, join(root, 'a.html'))
+    // The agent modifies the file out-of-band.
+    await writeFile(join(root, 'a.html'), 'v2')
+
+    await expect(writeSourceFile(root, join(root, 'a.html'), 'v3', hash)).rejects.toThrow(FileConflictError)
+    await expect(readFile(join(root, 'a.html'), 'utf8')).resolves.toBe('v2')
+  })
+
+  it('force overwrites when the expected hash is omitted', async () => {
+    await writeFile(join(root, 'a.html'), 'v1')
+    const { hash } = await readSourceFileVersioned(root, join(root, 'a.html'))
+    await writeFile(join(root, 'a.html'), 'v2')
+
+    const result = await writeSourceFile(root, join(root, 'a.html'), 'v3')
+    expect(result.hash).toBe(hashContent('v3'))
+    await expect(readFile(join(root, 'a.html'), 'utf8')).resolves.toBe('v3')
+  })
+
+  it('blocks a restore when the file was modified after the client read it', async () => {
+    await writeFile(join(root, 'a.html'), 'v1')
+    await writeSourceFile(root, join(root, 'a.html'), 'v2') // backup = v1
+    const { hash } = await readSourceFileVersioned(root, join(root, 'a.html')) // hash of v2
+    await writeFile(join(root, 'a.html'), 'v3') // agent modifies
+
+    const backups = await listBackups(root, join(root, 'a.html'))
+    await expect(restoreBackup(root, join(root, 'a.html'), backups[0] as string, hash)).rejects.toThrow(FileConflictError)
+    await expect(readFile(join(root, 'a.html'), 'utf8')).resolves.toBe('v3')
+  })
+
+  it('returns file-conflict over RPC on a stale write', async () => {
+    const handler = createStudioHandler()
+    await writeFile(join(root, 'a.html'), 'v1')
+    const read = await handler('read', { root, path: join(root, 'a.html') }, new AbortController().signal)
+    const hash = (read as { ok: true; value: { content: string; hash: string } }).value.hash
+    await writeFile(join(root, 'a.html'), 'v2')
+
+    const write = await handler('write', { root, path: join(root, 'a.html'), content: 'v3', expectedHash: hash }, new AbortController().signal)
+    expect(write).toMatchObject({ ok: false, error: { code: 'file-conflict' } })
   })
 })

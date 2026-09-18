@@ -62,7 +62,7 @@ export function apply(ctx: Context): void {
     }).catch(() => { /* append failure is non-fatal: the in-memory registry still served the write */ })
   })
   ctx.effect(
-    () => ctx.connection.rpc.handle(STUDIO_CHANNEL, createStudioHandler(registry), { authority: 'loopback' }),
+    () => ctx.connection.rpc.handle(STUDIO_CHANNEL, createStudioHandler(registry, log), { authority: 'loopback' }),
     'visual-studio: file rpc channel',
   )
 }

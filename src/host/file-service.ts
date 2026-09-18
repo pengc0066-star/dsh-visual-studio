@@ -10,11 +10,21 @@
  * @module @deepseek-ai/dsh-visual-studio/host/file-service
  */
 
+import { createHash } from 'node:crypto'
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
 import type { RpcResult } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { ArtifactRegistry } from './artifact-service.ts'
+import type { ArtifactEventLog } from './artifact-log.ts'
+
+/** The Studio's file-write conflict error code (merge-extensible union). */
+declare module '@deepseek-ai/dsh-host-apiproxy/api' {
+  interface RpcErrorDetailsMap {
+    /** The file's content changed since the client read it. */
+    'file-conflict': { path: string }
+  }
+}
 
 /** File extensions the Studio opens and edits. */
 const SOURCE_EXTENSIONS = new Set(['.html', '.htm', '.svg'])
@@ -38,6 +48,22 @@ export class WorkspacePathError extends Error {
     super(message)
     this.name = 'WorkspacePathError'
   }
+}
+
+/** An error the RPC handler folds into a `file-conflict` result. */
+export class FileConflictError extends Error {
+  /**
+   * @param path - the path whose content changed since the client read it.
+   */
+  constructor(readonly path: string) {
+    super(`file was modified: ${path}`)
+    this.name = 'FileConflictError'
+  }
+}
+
+/** SHA-256 hex digest of a text content (the Studio's content version). */
+export function hashContent(content: string): string {
+  return createHash('sha256').update(content, 'utf8').digest('hex')
 }
 
 /**
@@ -121,17 +147,37 @@ export async function readSourceFileBase64(root: string, path: string): Promise<
   return (await readFile(target)).toString('base64')
 }
 
+/** Read one workspace file's text and its content hash (version). */
+export async function readSourceFileVersioned(root: string, path: string): Promise<{ content: string; hash: string }> {
+  const content = await readSourceFile(root, path)
+  return { content, hash: hashContent(content) }
+}
+
 /**
  * Write one source file, keeping a timestamped sibling backup of the prior
- * content when the file already existed.
+ * content when the file already existed. When `expectedHash` is provided, the
+ * current content hash is checked first and a mismatch throws
+ * {@link FileConflictError} instead of overwriting.
  * @param root - absolute workspace root.
  * @param path - absolute target file path.
  * @param content - UTF-8 content to write.
- * @returns the backup path, or `undefined` when no prior file existed.
+ * @param expectedHash - content hash the client read; omitted skips the check.
+ * @returns the backup path and the new content hash.
  */
-export async function writeSourceFile(root: string, path: string, content: string): Promise<{ backup?: string }> {
+export async function writeSourceFile(root: string, path: string, content: string, expectedHash?: string): Promise<{ backup?: string; hash: string }> {
   const target = assertWithinWorkspace(root, path)
   await mkdir(dirname(target), { recursive: true })
+  if (expectedHash !== undefined) {
+    let currentHash: string
+    try {
+      currentHash = hashContent(await readFile(target, 'utf8'))
+    } catch (error) {
+      // A missing file means the client expected an existing one → conflict.
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new FileConflictError(target)
+      throw error
+    }
+    if (currentHash !== expectedHash) throw new FileConflictError(target)
+  }
   let backup: string | undefined
   try {
     const before = await readFile(target)
@@ -143,7 +189,8 @@ export async function writeSourceFile(root: string, path: string, content: strin
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
   await writeFile(target, content, 'utf8')
-  return backup === undefined ? {} : { backup }
+  const hash = hashContent(content)
+  return { ...(backup !== undefined ? { backup } : {}), hash }
 }
 
 /**
@@ -174,12 +221,15 @@ export async function listBackups(root: string, path: string): Promise<string[]>
 /**
  * Restore one specific backup over the file, keeping a fresh backup of the
  * current content first. The backup must be a sibling backup of the target.
+ * When `expectedHash` is provided, the current content hash is checked first so
+ * a later modification is never silently overwritten.
  * @param root - absolute workspace root.
  * @param path - absolute target file path.
  * @param backupPath - absolute backup path to restore.
- * @returns whether the backup was restored, plus the backup path used.
+ * @param expectedHash - content hash the client read; omitted skips the check.
+ * @returns whether the backup was restored, the backup used, and the new hash.
  */
-export async function restoreBackup(root: string, path: string, backupPath: string): Promise<{ restored: boolean; backup?: string }> {
+export async function restoreBackup(root: string, path: string, backupPath: string, expectedHash?: string): Promise<{ restored: boolean; backup?: string; hash?: string }> {
   const target = assertWithinWorkspace(root, path)
   const backup = assertWithinWorkspace(root, backupPath)
   const prefix = `${basename(target)}${BACKUP_MARKER}`
@@ -187,26 +237,31 @@ export async function restoreBackup(root: string, path: string, backupPath: stri
     throw new WorkspacePathError(backupPath, `not a backup of ${target}`)
   }
   const content = await readFile(backup, 'utf8')
-  await writeSourceFile(root, target, content)
-  return { restored: true, backup }
+  const result = await writeSourceFile(root, target, content, expectedHash)
+  return { restored: true, backup, hash: result.hash }
 }
 
 /**
- * Restore the most recent backup over the file.
+ * Restore the most recent backup over the file, checking the current content
+ * hash first when `expectedHash` is provided.
  * @param root - absolute workspace root.
  * @param path - absolute target file path.
- * @returns whether a backup was restored, plus the backup path used.
+ * @param expectedHash - content hash the client read; omitted skips the check.
+ * @returns whether a backup was restored, the backup used, and the new hash.
  */
-export async function restorePrevious(root: string, path: string): Promise<{ restored: boolean; backup?: string }> {
+export async function restorePrevious(root: string, path: string, expectedHash?: string): Promise<{ restored: boolean; backup?: string; hash?: string }> {
   const backups = await listBackups(root, path)
   if (backups.length === 0) return { restored: false }
-  return await restoreBackup(root, path, backups[backups.length - 1] as string)
+  return await restoreBackup(root, path, backups[backups.length - 1] as string, expectedHash)
 }
 
 /** Fold a thrown error into a failure result with a valid RPC error code. */
 function failureOf(error: unknown): RpcResult<unknown> {
   if (error instanceof WorkspacePathError) {
     return { ok: false, error: { code: 'workspace-invalid-path', message: error.message, details: { path: error.path } } }
+  }
+  if (error instanceof FileConflictError) {
+    return { ok: false, error: { code: 'file-conflict', message: error.message, details: { path: error.path } } }
   }
   const message = error instanceof Error ? error.message : String(error)
   return { ok: false, error: { code: 'internal', message, details: {} } }
@@ -228,7 +283,7 @@ function parseTarget(payload: unknown): { root: string; path: string } {
  * handler never throws.
  * @returns a Connection RPC handler over workspace source files.
  */
-export function createStudioHandler(registry?: ArtifactRegistry): ConnectionRpcHandler {
+export function createStudioHandler(registry?: ArtifactRegistry, log?: ArtifactEventLog): ConnectionRpcHandler {
   return async (endpoint, payload): Promise<RpcResult<unknown>> => {
     try {
       switch (endpoint) {
@@ -238,7 +293,7 @@ export function createStudioHandler(registry?: ArtifactRegistry): ConnectionRpcH
         }
         case 'read': {
           const { root, path } = parseTarget(payload)
-          return { ok: true, value: { content: await readSourceFile(root, path) } }
+          return { ok: true, value: await readSourceFileVersioned(root, path) }
         }
         case 'readBytes': {
           const { root, path } = parseTarget(payload)
@@ -246,9 +301,23 @@ export function createStudioHandler(registry?: ArtifactRegistry): ConnectionRpcH
         }
         case 'write': {
           const { root, path } = parseTarget(payload)
-          const content = (payload as { content?: unknown }).content
+          const body = (payload ?? {}) as { content?: unknown; expectedHash?: unknown; sessionId?: unknown }
+          const content = body.content
           if (typeof content !== 'string') throw new WorkspacePathError(path, 'payload requires string content')
-          return { ok: true, value: await writeSourceFile(root, path, content) }
+          const expectedHash = typeof body.expectedHash === 'string' ? body.expectedHash : undefined
+          const result = await writeSourceFile(root, path, content, expectedHash)
+          if (log !== undefined && typeof body.sessionId === 'string') {
+            await log.append({
+              sessionId: body.sessionId,
+              path,
+              cwd: root,
+              ...(expectedHash !== undefined ? { beforeVersion: expectedHash } : {}),
+              afterVersion: result.hash,
+              operation: 'save',
+              at: Date.now(),
+            })
+          }
+          return { ok: true, value: result }
         }
         case 'create': {
           const { root, path } = parseTarget(payload)
@@ -265,10 +334,22 @@ export function createStudioHandler(registry?: ArtifactRegistry): ConnectionRpcH
         }
         case 'backups.restore': {
           const { root, path } = parseTarget(payload)
-          const backup = (payload as { backup?: unknown }).backup
-          const result = typeof backup === 'string'
-            ? await restoreBackup(root, path, backup)
-            : await restorePrevious(root, path)
+          const body = (payload ?? {}) as { backup?: unknown; expectedHash?: unknown; sessionId?: unknown }
+          const expectedHash = typeof body.expectedHash === 'string' ? body.expectedHash : undefined
+          const result = typeof body.backup === 'string'
+            ? await restoreBackup(root, path, body.backup, expectedHash)
+            : await restorePrevious(root, path, expectedHash)
+          if (log !== undefined && result.restored && typeof body.sessionId === 'string') {
+            await log.append({
+              sessionId: body.sessionId,
+              path,
+              cwd: root,
+              ...(expectedHash !== undefined ? { beforeVersion: expectedHash } : {}),
+              ...(result.hash !== undefined ? { afterVersion: result.hash } : {}),
+              operation: 'restore',
+              at: Date.now(),
+            })
+          }
           return { ok: true, value: result }
         }
         default:

@@ -12,7 +12,7 @@ import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionListState, WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
 import { CodeEditor } from './CodeEditor.tsx'
 import type { EditorSelection } from './CodeEditor.tsx'
-import { formatAnnotationMessage, imageMime, kindOfPath, relativePathOf, truncate } from './studio.ts'
+import { formatAnnotationMessage, imageMime, kindOfPath, relativePathOf, StudioRpcError, truncate } from './studio.ts'
 import type { Annotation, AnnotationMeta, InspectPayload, StudioPanelFace, StudioState } from './studio.ts'
 import { diffLines } from './diff.ts'
 import { INSPECT_EVENT, INSPECT_TOGGLE, ZOOM_EVENT, previewDocument } from './inspector.ts'
@@ -82,6 +82,7 @@ export function StudioPanel(props: StudioPanelProps) {
   const [currentFile, setCurrentFile] = useState<string | null>(null)
   const [currentVersion, setCurrentVersion] = useState<number | undefined>(undefined)
   const [content, setContent] = useState('')
+  const [currentHash, setCurrentHash] = useState<string | undefined>(undefined)
   const [preview, setPreview] = useState('')
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [imageBox, setImageBox] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
@@ -96,6 +97,7 @@ export function StudioPanel(props: StudioPanelProps) {
   const [annotations, setAnnotations] = useState<Annotation[]>(loadAnnotations)
   const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [conflict, setConflict] = useState(false)
   const [backups, setBackups] = useState<string[]>([])
   const [selectedBackup, setSelectedBackup] = useState<string | null>(null)
   const [backupContent, setBackupContent] = useState<string | null>(null)
@@ -105,6 +107,8 @@ export function StudioPanel(props: StudioPanelProps) {
   const editTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const imageDrag = useRef<{ x: number; y: number } | null>(null)
   const loadedPathRef = useRef<string | null>(null)
+  const contentRef = useRef('')
+  const savedRef = useRef('')
 
   const currentKind = currentFile === null ? null : kindOfPath(currentFile)
   const srcdoc = useMemo(() => previewDocument(preview), [preview])
@@ -120,6 +124,10 @@ export function StudioPanel(props: StudioPanelProps) {
     postToFrame({ type: INSPECT_TOGGLE, enabled: inspectMode })
     postToFrame({ type: ZOOM_EVENT, scale: zoom })
   }, [inspectMode, zoom, postToFrame])
+
+  // Keep the poll's dirty-check refs current.
+  useEffect(() => { contentRef.current = content }, [content])
+  useEffect(() => { savedRef.current = saved }, [saved])
 
   // Persist annotations on every change.
   useEffect(() => {
@@ -151,21 +159,24 @@ export function StudioPanel(props: StudioPanelProps) {
       setImageBox(null)
       setTextSelection(null)
       setError(null)
+      setConflict(false)
       setCurrentPath(path)
       loadedPathRef.current = path
       if (kindOfPath(path) === 'image') {
         const base64 = await readFileBytes(cwd, path)
         setCurrentFile(path)
         setContent('')
+        setCurrentHash(undefined)
         setPreview('')
         setImageUrl(`data:${imageMime(path)};base64,${base64}`)
         setSaved('')
         setHistory([])
         setHistoryIndex(-1)
       } else {
-        const text = await readFile(cwd, path)
+        const { content: text, hash } = await readFile(cwd, path)
         setCurrentFile(path)
         setContent(text)
+        setCurrentHash(hash)
         setPreview(text)
         setImageUrl(null)
         setSaved(text)
@@ -225,10 +236,15 @@ export function StudioPanel(props: StudioPanelProps) {
   useEffect(() => {
     if (cwd === undefined || currentFile === null) return
     const timer = setInterval(() => {
-      void readFile(cwd, currentFile).then((disk) => {
+      void readFile(cwd, currentFile).then(({ content: disk, hash }) => {
         setSaved(prev => {
           if (disk === prev) return prev
-          setContent(cur => (cur === prev ? disk : cur))
+          // Agent changed the file. Auto-refresh the editor (and advance the
+          // base hash) only when the user has no unsaved edits.
+          if (contentRef.current === prev) {
+            setContent(disk)
+            setCurrentHash(hash)
+          }
           setPreview(disk)
           setAnnotations(list => list.map(a => a.filePath === currentFile ? { ...a, status: 'processed' as const } : a))
           return disk
@@ -278,18 +294,24 @@ export function StudioPanel(props: StudioPanelProps) {
     })
   }, [history])
 
-  const save = useCallback(async () => {
+  const save = useCallback(async (force = false) => {
     if (cwd === undefined || currentFile === null) return
     try {
-      await writeFile(cwd, currentFile, content)
+      const result = await writeFile(cwd, currentFile, content, force ? undefined : currentHash, sessionId)
       setSaved(content)
       setPreview(content)
+      setCurrentHash(result.hash)
+      setConflict(false)
       setBackupsTick(tick => tick + 1)
       setError(null)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      if (reason instanceof StudioRpcError && reason.code === 'file-conflict') {
+        setConflict(true)
+      } else {
+        setError(reason instanceof Error ? reason.message : String(reason))
+      }
     }
-  }, [cwd, currentFile, content, writeFile])
+  }, [cwd, currentFile, content, currentHash, sessionId, writeFile])
 
   const createNew = useCallback(async () => {
     if (cwd === undefined) return
@@ -339,7 +361,7 @@ export function StudioPanel(props: StudioPanelProps) {
   const restore = useCallback(async () => {
     if (cwd === undefined || currentFile === null) return
     try {
-      const result = await restorePrevious(cwd, currentFile)
+      const result = await restorePrevious(cwd, currentFile, currentHash, sessionId)
       if (!result.restored) {
         setError('没有可恢复的上一版本')
         return
@@ -348,16 +370,20 @@ export function StudioPanel(props: StudioPanelProps) {
       setBackupsTick(tick => tick + 1)
       setError(null)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      if (reason instanceof StudioRpcError && reason.code === 'file-conflict') {
+        setConflict(true)
+      } else {
+        setError(reason instanceof Error ? reason.message : String(reason))
+      }
     }
-  }, [cwd, currentFile, restorePrevious, openFile])
+  }, [cwd, currentFile, currentHash, sessionId, restorePrevious, openFile])
 
   /** Load one historical backup's content for the before/after diff view. */
   const selectBackup = useCallback(async (backupPath: string) => {
     if (cwd === undefined) return
     setSelectedBackup(backupPath)
     try {
-      setBackupContent(await readFile(cwd, backupPath))
+      setBackupContent((await readFile(cwd, backupPath)).content)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     }
@@ -367,7 +393,7 @@ export function StudioPanel(props: StudioPanelProps) {
   const restoreBackupVersion = useCallback(async () => {
     if (cwd === undefined || currentFile === null || selectedBackup === null) return
     try {
-      const result = await restoreBackup(cwd, currentFile, selectedBackup)
+      const result = await restoreBackup(cwd, currentFile, selectedBackup, currentHash, sessionId)
       if (!result.restored) {
         setError('恢复失败')
         return
@@ -378,9 +404,13 @@ export function StudioPanel(props: StudioPanelProps) {
       setBackupsTick(tick => tick + 1)
       setError(null)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      if (reason instanceof StudioRpcError && reason.code === 'file-conflict') {
+        setConflict(true)
+      } else {
+        setError(reason instanceof Error ? reason.message : String(reason))
+      }
     }
-  }, [cwd, currentFile, selectedBackup, restoreBackup, openFile])
+  }, [cwd, currentFile, selectedBackup, currentHash, sessionId, restoreBackup, openFile])
 
   /** Submit the current annotation back to the agent session. */
   const submitNote = useCallback(async () => {
@@ -514,7 +544,7 @@ export function StudioPanel(props: StudioPanelProps) {
               )}
             </select>
             <button type="button" className={styles.btn} onClick={createNew}>新建</button>
-            <button type="button" className={styles.btn} onClick={save} disabled={currentFile === null || !isDirty}>保存</button>
+            <button type="button" className={styles.btn} onClick={() => void save()} disabled={currentFile === null || !isDirty}>保存</button>
             <button type="button" className={styles.btn} onClick={refresh} disabled={currentFile === null}>刷新</button>
             <button type="button" className={styles.btn} data-tooltip="恢复上一版本" onClick={() => void restore()} disabled={currentFile === null}>恢复</button>
           </div>
@@ -569,6 +599,13 @@ export function StudioPanel(props: StudioPanelProps) {
           </div>
         </div>
 
+        {conflict && (
+          <div className={styles.conflictBanner}>
+            <span className={styles.conflictText}>文件已被 Agent 修改</span>
+            <button type="button" className={styles.btn} onClick={() => void refresh()}>重新加载</button>
+            <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => void save(true)}>强制覆盖</button>
+          </div>
+        )}
         {error !== null && <div className={styles.error}>{error}</div>}
 
         <div className={styles.body}>

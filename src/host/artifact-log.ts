@@ -24,6 +24,12 @@ export interface ArtifactEvent {
   cwd?: string
   /** Filesystem version reported by `fs/observed` (for conflict detection). */
   fsVersion?: string
+  /** Content hash before a Studio write/restore (the `expectedVersion`). */
+  beforeVersion?: string
+  /** Content hash after a Studio write/restore. */
+  afterVersion?: string
+  /** The Studio operation that produced this event. */
+  operation?: 'save' | 'restore'
   /** Epoch ms of the observation. */
   at: number
 }
@@ -68,6 +74,9 @@ export function parseEvent(line: string): ArtifactEvent | null {
     path: e.path,
     ...(typeof e.cwd === 'string' ? { cwd: e.cwd } : {}),
     ...(typeof e.fsVersion === 'string' ? { fsVersion: e.fsVersion } : {}),
+    ...(typeof e.beforeVersion === 'string' ? { beforeVersion: e.beforeVersion } : {}),
+    ...(typeof e.afterVersion === 'string' ? { afterVersion: e.afterVersion } : {}),
+    ...(e.operation === 'save' || e.operation === 'restore' ? { operation: e.operation } : {}),
     at: e.at,
   }
 }

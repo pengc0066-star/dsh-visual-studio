@@ -526,6 +526,27 @@
   flex: none;
 }
 
+.conflictBanner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--vs-border);
+  background: rgba(214, 158, 46, 0.12);
+  color: #9a6b00;
+  font-size: 12px;
+  flex: none;
+}
+
+.conflictText {
+  flex: 1 1 auto;
+  font-weight: 600;
+}
+
+@media (prefers-color-scheme: dark) {
+  .conflictBanner { color: #e3b341; }
+}
+
 /* ── image preview ───────────────────────────────────────────────────────── */
 
 .imageStage {

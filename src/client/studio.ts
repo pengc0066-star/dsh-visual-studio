@@ -57,24 +57,36 @@ export interface Annotation {
   createdAt: number
 }
 
+/** An RPC failure carrying its error code (e.g. `file-conflict`). */
+export class StudioRpcError extends Error {
+  /**
+   * @param message - the human-readable reason.
+   * @param code - the RPC error code.
+   */
+  constructor(message: string, readonly code: string) {
+    super(message)
+    this.name = 'StudioRpcError'
+  }
+}
+
 /** Bound file/annotation callbacks the plugin apply face injects into the panel. */
 export interface StudioInjected {
   /** List every HTML/SVG file under a workspace root. */
   listFiles(root: string): Promise<string[]>
-  /** Read one workspace file's text. */
-  readFile(root: string, path: string): Promise<string>
+  /** Read one workspace file's text and content hash (version). */
+  readFile(root: string, path: string): Promise<{ content: string; hash: string }>
   /** Read one workspace file's bytes as base64 (for image preview). */
   readFileBytes(root: string, path: string): Promise<string>
-  /** Write one workspace file, keeping a backup of the prior content. */
-  writeFile(root: string, path: string, content: string): Promise<{ backup?: string }>
+  /** Write one file, checking `expectedHash` first when provided. */
+  writeFile(root: string, path: string, content: string, expectedHash?: string, sessionId?: string): Promise<{ backup?: string; hash: string }>
   /** Create one empty workspace file (refuses to overwrite). */
   createFile(root: string, path: string): Promise<string>
-  /** Restore the most recent pre-overwrite backup over the file. */
-  restorePrevious(root: string, path: string): Promise<{ restored: boolean }>
+  /** Restore the most recent backup, checking `expectedHash` first when provided. */
+  restorePrevious(root: string, path: string, expectedHash?: string, sessionId?: string): Promise<{ restored: boolean; hash?: string }>
   /** List a file's pre-overwrite backups (absolute paths, oldest first). */
   listBackups(root: string, path: string): Promise<string[]>
-  /** Restore one specific backup over the file. */
-  restoreBackup(root: string, path: string, backupPath: string): Promise<{ restored: boolean }>
+  /** Restore one specific backup, checking `expectedHash` first when provided. */
+  restoreBackup(root: string, path: string, backupPath: string, expectedHash?: string, sessionId?: string): Promise<{ restored: boolean; hash?: string }>
   /** Send the annotation text to the current agent session as a user message. */
   submitAnnotation(sessionId: string, text: string): Promise<boolean>
   /** List the current session's deliverable artifacts. */
