@@ -99,6 +99,7 @@ export function StudioPanel(props: StudioPanelProps) {
   const [backups, setBackups] = useState<string[]>([])
   const [selectedBackup, setSelectedBackup] = useState<string | null>(null)
   const [backupContent, setBackupContent] = useState<string | null>(null)
+  const [backupsTick, setBackupsTick] = useState(0)
 
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const editTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -211,7 +212,7 @@ export function StudioPanel(props: StudioPanelProps) {
       .then(next => { if (!cancelled) setBackups(next.slice().reverse()) })
       .catch(() => { if (!cancelled) setBackups([]) })
     return () => { cancelled = true }
-  }, [cwd, currentFile, listBackups])
+  }, [cwd, currentFile, listBackups, backupsTick])
 
   /** Re-read the open file from disk (manual refresh). */
   const refresh = useCallback(async () => {
@@ -283,6 +284,7 @@ export function StudioPanel(props: StudioPanelProps) {
       await writeFile(cwd, currentFile, content)
       setSaved(content)
       setPreview(content)
+      setBackupsTick(tick => tick + 1)
       setError(null)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
@@ -343,6 +345,7 @@ export function StudioPanel(props: StudioPanelProps) {
         return
       }
       await openFile(currentFile)
+      setBackupsTick(tick => tick + 1)
       setError(null)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
@@ -372,6 +375,7 @@ export function StudioPanel(props: StudioPanelProps) {
       setSelectedBackup(null)
       setBackupContent(null)
       await openFile(currentFile)
+      setBackupsTick(tick => tick + 1)
       setError(null)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
