@@ -189,11 +189,13 @@ export function StudioPanel(props: StudioPanelProps) {
   }, [cwd, readFile, readFileBytes, setCurrentPath])
 
   // Open the file queued by the artifacts bar (or entry button) once visible.
+  // Reopening the already-open file must not re-read it, or an in-progress
+  // unsaved edit would be discarded.
   useEffect(() => {
     if (!open) return
     const pending = consumePendingFile()
-    if (pending !== null) void openFile(pending)
-  }, [open, consumePendingFile, openFile])
+    if (pending !== null && pending !== currentFile) void openFile(pending)
+  }, [open, consumePendingFile, openFile, currentFile])
 
   // Resolve the open file's artifact version for annotation metadata.
   useEffect(() => {
