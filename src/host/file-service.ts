@@ -18,14 +18,6 @@ import type { RpcResult } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { ArtifactRegistry } from './artifact-service.ts'
 import type { ArtifactEventLog } from './artifact-log.ts'
 
-/** The Studio's file-write conflict error code (merge-extensible union). */
-declare module '@deepseek-ai/dsh-host-apiproxy/api' {
-  interface RpcErrorDetailsMap {
-    /** The file's content changed since the client read it. */
-    'file-conflict': { path: string }
-  }
-}
-
 /** File extensions the Studio opens and edits. */
 const SOURCE_EXTENSIONS = new Set(['.html', '.htm', '.svg'])
 
@@ -260,9 +252,6 @@ function failureOf(error: unknown): RpcResult<unknown> {
   if (error instanceof WorkspacePathError) {
     return { ok: false, error: { code: 'workspace-invalid-path', message: error.message, details: { path: error.path } } }
   }
-  if (error instanceof FileConflictError) {
-    return { ok: false, error: { code: 'file-conflict', message: error.message, details: { path: error.path } } }
-  }
   const message = error instanceof Error ? error.message : String(error)
   return { ok: false, error: { code: 'internal', message, details: {} } }
 }
@@ -305,7 +294,15 @@ export function createStudioHandler(registry?: ArtifactRegistry, log?: ArtifactE
           const content = body.content
           if (typeof content !== 'string') throw new WorkspacePathError(path, 'payload requires string content')
           const expectedHash = typeof body.expectedHash === 'string' ? body.expectedHash : undefined
-          const result = await writeSourceFile(root, path, content, expectedHash)
+          let result: { backup?: string; hash: string } | { conflict: true; path: string }
+          try {
+            result = await writeSourceFile(root, path, content, expectedHash)
+          } catch (error) {
+            if (error instanceof FileConflictError) {
+              return { ok: true, value: { conflict: true, path: error.path } }
+            }
+            throw error
+          }
           if (log !== undefined && typeof body.sessionId === 'string') {
             await log.append({
               sessionId: body.sessionId,
@@ -336,9 +333,17 @@ export function createStudioHandler(registry?: ArtifactRegistry, log?: ArtifactE
           const { root, path } = parseTarget(payload)
           const body = (payload ?? {}) as { backup?: unknown; expectedHash?: unknown; sessionId?: unknown }
           const expectedHash = typeof body.expectedHash === 'string' ? body.expectedHash : undefined
-          const result = typeof body.backup === 'string'
-            ? await restoreBackup(root, path, body.backup, expectedHash)
-            : await restorePrevious(root, path, expectedHash)
+          let result: { restored: boolean; backup?: string; hash?: string }
+          try {
+            result = typeof body.backup === 'string'
+              ? await restoreBackup(root, path, body.backup, expectedHash)
+              : await restorePrevious(root, path, expectedHash)
+          } catch (error) {
+            if (error instanceof FileConflictError) {
+              return { ok: true, value: { conflict: true, path: error.path } }
+            }
+            throw error
+          }
           if (log !== undefined && result.restored && typeof body.sessionId === 'string') {
             await log.append({
               sessionId: body.sessionId,

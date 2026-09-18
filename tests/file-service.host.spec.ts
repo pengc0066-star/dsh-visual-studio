@@ -198,7 +198,7 @@ describe('write consistency protection', () => {
     await expect(readFile(join(root, 'a.html'), 'utf8')).resolves.toBe('v3')
   })
 
-  it('returns file-conflict over RPC on a stale write', async () => {
+  it('returns a conflict value over RPC on a stale write', async () => {
     const handler = createStudioHandler()
     await writeFile(join(root, 'a.html'), 'v1')
     const read = await handler('read', { root, path: join(root, 'a.html') }, new AbortController().signal)
@@ -206,6 +206,6 @@ describe('write consistency protection', () => {
     await writeFile(join(root, 'a.html'), 'v2')
 
     const write = await handler('write', { root, path: join(root, 'a.html'), content: 'v3', expectedHash: hash }, new AbortController().signal)
-    expect(write).toMatchObject({ ok: false, error: { code: 'file-conflict' } })
+    expect(write).toEqual({ ok: true, value: { conflict: true, path: join(root, 'a.html') } })
   })
 })

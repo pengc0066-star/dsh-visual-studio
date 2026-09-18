@@ -77,16 +77,16 @@ export interface StudioInjected {
   readFile(root: string, path: string): Promise<{ content: string; hash: string }>
   /** Read one workspace file's bytes as base64 (for image preview). */
   readFileBytes(root: string, path: string): Promise<string>
-  /** Write one file, checking `expectedHash` first when provided. */
-  writeFile(root: string, path: string, content: string, expectedHash?: string, sessionId?: string): Promise<{ backup?: string; hash: string }>
+  /** Write one file, checking `expectedHash` first when provided; `conflict` marks a blocked overwrite. */
+  writeFile(root: string, path: string, content: string, expectedHash?: string, sessionId?: string): Promise<{ backup?: string; hash?: string; conflict?: true }>
   /** Create one empty workspace file (refuses to overwrite). */
   createFile(root: string, path: string): Promise<string>
   /** Restore the most recent backup, checking `expectedHash` first when provided. */
-  restorePrevious(root: string, path: string, expectedHash?: string, sessionId?: string): Promise<{ restored: boolean; hash?: string }>
+  restorePrevious(root: string, path: string, expectedHash?: string, sessionId?: string): Promise<{ restored: boolean; hash?: string; conflict?: true }>
   /** List a file's pre-overwrite backups (absolute paths, oldest first). */
   listBackups(root: string, path: string): Promise<string[]>
   /** Restore one specific backup, checking `expectedHash` first when provided. */
-  restoreBackup(root: string, path: string, backupPath: string, expectedHash?: string, sessionId?: string): Promise<{ restored: boolean; hash?: string }>
+  restoreBackup(root: string, path: string, backupPath: string, expectedHash?: string, sessionId?: string): Promise<{ restored: boolean; hash?: string; conflict?: true }>
   /** Send the annotation text to the current agent session as a user message. */
   submitAnnotation(sessionId: string, text: string): Promise<boolean>
   /** List the current session's deliverable artifacts. */

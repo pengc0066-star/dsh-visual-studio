@@ -105,7 +105,7 @@ function createFileFace(ctx: ClientContext): StudioInjected {
         content,
         ...(expectedHash !== undefined ? { expectedHash } : {}),
         ...(sessionId !== undefined ? { sessionId } : {}),
-      }) as { backup?: string; hash: string }
+      }) as { backup?: string; hash?: string; conflict?: true }
     },
     createFile: async (root, path) => {
       const value = await call('create', { root, path }) as { path: string }
@@ -117,7 +117,7 @@ function createFileFace(ctx: ClientContext): StudioInjected {
         path,
         ...(expectedHash !== undefined ? { expectedHash } : {}),
         ...(sessionId !== undefined ? { sessionId } : {}),
-      }) as { restored: boolean; hash?: string }
+      }) as { restored: boolean; hash?: string; conflict?: true }
     },
     listBackups: async (root, path) => {
       const value = await call('backups.list', { root, path }) as { backups: string[] }
@@ -130,7 +130,7 @@ function createFileFace(ctx: ClientContext): StudioInjected {
         backup: backupPath,
         ...(expectedHash !== undefined ? { expectedHash } : {}),
         ...(sessionId !== undefined ? { sessionId } : {}),
-      }) as { restored: boolean; hash?: string }
+      }) as { restored: boolean; hash?: string; conflict?: true }
     },
     submitAnnotation: async (sessionId, text) => {
       const response = await connection.api.sessions.prompt({

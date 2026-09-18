@@ -12,7 +12,7 @@ import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionListState, WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
 import { CodeEditor } from './CodeEditor.tsx'
 import type { EditorSelection } from './CodeEditor.tsx'
-import { formatAnnotationMessage, imageMime, kindOfPath, relativePathOf, StudioRpcError, truncate } from './studio.ts'
+import { formatAnnotationMessage, imageMime, kindOfPath, relativePathOf, truncate } from './studio.ts'
 import type { Annotation, AnnotationMeta, InspectPayload, StudioPanelFace, StudioState } from './studio.ts'
 import { diffLines } from './diff.ts'
 import { INSPECT_EVENT, INSPECT_TOGGLE, ZOOM_EVENT, previewDocument } from './inspector.ts'
@@ -237,18 +237,16 @@ export function StudioPanel(props: StudioPanelProps) {
     if (cwd === undefined || currentFile === null) return
     const timer = setInterval(() => {
       void readFile(cwd, currentFile).then(({ content: disk, hash }) => {
-        setSaved(prev => {
-          if (disk === prev) return prev
-          // Agent changed the file. Auto-refresh the editor (and advance the
-          // base hash) only when the user has no unsaved edits.
-          if (contentRef.current === prev) {
-            setContent(disk)
-            setCurrentHash(hash)
-          }
-          setPreview(disk)
-          setAnnotations(list => list.map(a => a.filePath === currentFile ? { ...a, status: 'processed' as const } : a))
-          return disk
-        })
+        if (disk === savedRef.current) return
+        // Agent changed the file. Auto-refresh the editor (and advance the base
+        // hash) only when the user has no unsaved edits.
+        if (contentRef.current === savedRef.current) {
+          setContent(disk)
+          setCurrentHash(hash)
+        }
+        setSaved(disk)
+        setPreview(disk)
+        setAnnotations(list => list.map(a => a.filePath === currentFile ? { ...a, status: 'processed' as const } : a))
       }).catch(() => { /* transient read failures are ignored until the next poll */ })
     }, POLL_MS)
     return () => clearInterval(timer)
@@ -298,6 +296,10 @@ export function StudioPanel(props: StudioPanelProps) {
     if (cwd === undefined || currentFile === null) return
     try {
       const result = await writeFile(cwd, currentFile, content, force ? undefined : currentHash, sessionId)
+      if (result.conflict === true) {
+        setConflict(true)
+        return
+      }
       setSaved(content)
       setPreview(content)
       setCurrentHash(result.hash)
@@ -305,11 +307,7 @@ export function StudioPanel(props: StudioPanelProps) {
       setBackupsTick(tick => tick + 1)
       setError(null)
     } catch (reason) {
-      if (reason instanceof StudioRpcError && reason.code === 'file-conflict') {
-        setConflict(true)
-      } else {
-        setError(reason instanceof Error ? reason.message : String(reason))
-      }
+      setError(reason instanceof Error ? reason.message : String(reason))
     }
   }, [cwd, currentFile, content, currentHash, sessionId, writeFile])
 
@@ -362,6 +360,10 @@ export function StudioPanel(props: StudioPanelProps) {
     if (cwd === undefined || currentFile === null) return
     try {
       const result = await restorePrevious(cwd, currentFile, currentHash, sessionId)
+      if (result.conflict === true) {
+        setConflict(true)
+        return
+      }
       if (!result.restored) {
         setError('没有可恢复的上一版本')
         return
@@ -370,11 +372,7 @@ export function StudioPanel(props: StudioPanelProps) {
       setBackupsTick(tick => tick + 1)
       setError(null)
     } catch (reason) {
-      if (reason instanceof StudioRpcError && reason.code === 'file-conflict') {
-        setConflict(true)
-      } else {
-        setError(reason instanceof Error ? reason.message : String(reason))
-      }
+      setError(reason instanceof Error ? reason.message : String(reason))
     }
   }, [cwd, currentFile, currentHash, sessionId, restorePrevious, openFile])
 
@@ -394,6 +392,10 @@ export function StudioPanel(props: StudioPanelProps) {
     if (cwd === undefined || currentFile === null || selectedBackup === null) return
     try {
       const result = await restoreBackup(cwd, currentFile, selectedBackup, currentHash, sessionId)
+      if (result.conflict === true) {
+        setConflict(true)
+        return
+      }
       if (!result.restored) {
         setError('恢复失败')
         return
@@ -404,11 +406,7 @@ export function StudioPanel(props: StudioPanelProps) {
       setBackupsTick(tick => tick + 1)
       setError(null)
     } catch (reason) {
-      if (reason instanceof StudioRpcError && reason.code === 'file-conflict') {
-        setConflict(true)
-      } else {
-        setError(reason instanceof Error ? reason.message : String(reason))
-      }
+      setError(reason instanceof Error ? reason.message : String(reason))
     }
   }, [cwd, currentFile, selectedBackup, currentHash, sessionId, restoreBackup, openFile])
 
