@@ -8,6 +8,7 @@
  */
 
 import { basename, extname, relative } from 'node:path'
+import type { ArtifactEvent } from './artifact-log.ts'
 
 /** The deliverable kind of one artifact, driving the Studio's open behavior. */
 export type ArtifactKind = 'html' | 'svg' | 'image' | 'text' | 'other'
@@ -127,4 +128,29 @@ export class ArtifactRegistry {
     if (session === undefined) return []
     return [...session.values()].sort((left, right) => right.updatedAt - left.updatedAt)
   }
+
+  /**
+   * Rebuild the registry from a replayed event log (restart recovery). The
+   * existing in-memory state is discarded so the projection always matches the
+   * log exactly.
+   * @param events - events in sequence order.
+   */
+  replay(events: readonly ArtifactEvent[]): void {
+    this.bySession.clear()
+    for (const event of events) {
+      this.observe(event.sessionId, event.cwd, event.path, event.at)
+    }
+  }
+}
+
+/**
+ * Filter the event log to one path's history (历史回放).
+ * @param events - events in sequence order.
+ * @param sessionId - the agent session id.
+ * @param path - optional path; omitted returns the whole session history.
+ * @returns matching events in sequence order.
+ */
+export function historyOf(events: readonly ArtifactEvent[], sessionId: string, path?: string): ArtifactEvent[] {
+  return events.filter(event =>
+    event.sessionId === sessionId && (path === undefined || event.path === path))
 }

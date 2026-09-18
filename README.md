@@ -68,9 +68,9 @@ A dual-face Cordis plugin (one package, two halves):
 
 - **Node half** (`src/index.ts`, host tree): registers the `/visual-studio`
   Connection RPC channel (`authority: loopback`) serving `list` / `read` /
-  `write` / `create` / `artifacts.list` / `backups.restore`, and records each
-  session's deliverable artifacts (path, version, relative path) from the
-  `fs/observed` event. Every target path is containment-checked against the
+  `write` / `create` / `artifacts.list` / `backups.restore`, and appends each
+  session's `fs/observed` write/edit to a persisted JSONL event log replayed on
+  startup. Every target path is containment-checked against the
   workspace root before any read or write.
 - **Browser half** (`src/client/`, client tree): registers the `StudioPanel`
   into the `shell.overlay` slot and injects the file/session callbacks over
@@ -135,7 +135,5 @@ Remove the row from `$DSH_HOME/profiles/web/cordis.patch.yml` and delete the
   are confined to an opaque origin but are not sanitized.
 - Undo history and annotation state are session-local (annotations persist via
   `localStorage`; undo history does not survive a page reload).
-- The session artifacts registry is in-memory: it resets when `dsh web`
-  restarts and repopulates as the agent writes files again.
 - The `dsh.bundle` patch is dormant when installed through a profile patch
   layer rather than `dsh plugin add`.

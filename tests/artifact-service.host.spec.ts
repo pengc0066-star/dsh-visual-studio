@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ArtifactRegistry, classifyKind, isExcludedPath } from '../src/host/artifact-service.ts'
+import { ArtifactRegistry, classifyKind, historyOf, isExcludedPath } from '../src/host/artifact-service.ts'
 
 describe('isExcludedPath', () => {
   it('excludes dependency, cache, build, test, and hidden paths', () => {
@@ -74,5 +74,37 @@ describe('ArtifactRegistry', () => {
     expect(byPath.get('/p/index.html')?.relativePath).toBe('index.html')
     expect(byPath.get('/p/sub/a.html')?.relativePath).toBe('sub/a.html')
     expect(byPath.get('/p/orphan.svg')?.relativePath).toBe('')
+  })
+
+  it('replays an event log to rebuild the registry', () => {
+    const registry = new ArtifactRegistry()
+    registry.replay([
+      { seq: 1, sessionId: 's1', path: '/p/index.html', cwd: '/p', at: 100 },
+      { seq: 2, sessionId: 's1', path: '/p/index.html', cwd: '/p', at: 200 },
+      { seq: 3, sessionId: 's1', path: '/p/logo.svg', cwd: '/p', at: 150 },
+    ])
+    const artifacts = registry.list('s1')
+    expect(artifacts).toHaveLength(2)
+    expect(artifacts.find(a => a.path === '/p/index.html')?.version).toBe(2)
+  })
+
+  it('replay discards prior state', () => {
+    const registry = new ArtifactRegistry()
+    registry.observe('s1', '/p', '/p/old.html', 100)
+    registry.replay([])
+    expect(registry.list('s1')).toEqual([])
+  })
+})
+
+describe('historyOf', () => {
+  it('filters a session history, optionally by path', () => {
+    const events = [
+      { seq: 1, sessionId: 's1', path: '/p/a.html', at: 100 },
+      { seq: 2, sessionId: 's1', path: '/p/b.html', at: 200 },
+      { seq: 3, sessionId: 's2', path: '/p/a.html', at: 300 },
+    ]
+    expect(historyOf(events, 's1')).toEqual([events[0], events[1]])
+    expect(historyOf(events, 's1', '/p/a.html')).toEqual([events[0]])
+    expect(historyOf(events, 'none')).toEqual([])
   })
 })
