@@ -6,8 +6,10 @@ import {
   assertWithinWorkspace,
   createSourceFile,
   createStudioHandler,
+  listBackups,
   listSourceFiles,
   readSourceFile,
+  restoreBackup,
   writeSourceFile,
   WorkspacePathError,
 } from '../src/host/file-service.ts'
@@ -112,5 +114,41 @@ describe('createStudioHandler', () => {
     const handler = createStudioHandler()
     const result = await handler('nope', {}, new AbortController().signal)
     expect(result).toMatchObject({ ok: false, error: { code: 'internal' } })
+  })
+})
+
+describe('backup list and restore', () => {
+  it('lists backups and restores a specific one', async () => {
+    await writeFile(join(root, 'a.html'), 'v1')
+    await writeSourceFile(root, join(root, 'a.html'), 'v2')
+    await writeSourceFile(root, join(root, 'a.html'), 'v3')
+
+    const backups = await listBackups(root, join(root, 'a.html'))
+    expect(backups).toHaveLength(2)
+
+    const result = await restoreBackup(root, join(root, 'a.html'), backups[0] as string)
+    expect(result.restored).toBe(true)
+    await expect(readFile(join(root, 'a.html'), 'utf8')).resolves.toBe('v1')
+  })
+
+  it('rejects restoring a path that is not a backup of the target', async () => {
+    await writeFile(join(root, 'a.html'), 'v1')
+    await writeFile(join(root, 'other.txt'), 'x')
+    await expect(restoreBackup(root, join(root, 'a.html'), join(root, 'other.txt'))).rejects.toThrow(/not a backup/)
+  })
+
+  it('exposes backups.list and backups.restore over RPC', async () => {
+    const handler = createStudioHandler()
+    await writeFile(join(root, 'a.html'), 'v1')
+    await writeSourceFile(root, join(root, 'a.html'), 'v2')
+
+    const list = await handler('backups.list', { root, path: join(root, 'a.html') }, new AbortController().signal)
+    expect(list.ok).toBe(true)
+    const backups = (list as { ok: true; value: { backups: string[] } }).value.backups
+    expect(backups).toHaveLength(1)
+
+    const restore = await handler('backups.restore', { root, path: join(root, 'a.html'), backup: backups[0] }, new AbortController().signal)
+    expect(restore.ok).toBe(true)
+    await expect(readFile(join(root, 'a.html'), 'utf8')).resolves.toBe('v1')
   })
 })

@@ -14,6 +14,7 @@ import { CodeEditor } from './CodeEditor.tsx'
 import type { EditorSelection } from './CodeEditor.tsx'
 import { formatAnnotationMessage, imageMime, kindOfPath, relativePathOf, truncate } from './studio.ts'
 import type { Annotation, AnnotationMeta, InspectPayload, StudioPanelFace, StudioState } from './studio.ts'
+import { diffLines } from './diff.ts'
 import { INSPECT_EVENT, INSPECT_TOGGLE, ZOOM_EVENT, previewDocument } from './inspector.ts'
 import styles from './StudioPanel.module.css'
 
@@ -59,8 +60,19 @@ function loadAnnotations(): Annotation[] {
   }
 }
 
+/** Parse the timestamp embedded in a backup path, or `null` when absent. */
+function backupTimestamp(backupPath: string): number | null {
+  const match = /\.dsh-visual-studio-backup-(\d+)$/.exec(backupPath)
+  return match === null ? null : Number(match[1])
+}
+
+/** Human-readable time for a historical backup entry. */
+function formatBackupTime(at: number): string {
+  return new Date(at).toLocaleString()
+}
+
 export function StudioPanel(props: StudioPanelProps) {
-  const { useSessions, useOpen, listFiles, readFile, readFileBytes, writeFile, createFile, restorePrevious, submitAnnotation, listArtifacts, close, consumePendingFile, setCurrentPath } = props
+  const { useSessions, useOpen, listFiles, readFile, readFileBytes, writeFile, createFile, restorePrevious, listBackups, restoreBackup, submitAnnotation, listArtifacts, close, consumePendingFile, setCurrentPath } = props
   const open = useOpen(value => value.open)
   const sessionId = useSessions(s => s.current)
   const cwd = useSessions(s => (s.current === undefined ? undefined : s.byId[s.current]?.cwd))
@@ -84,6 +96,9 @@ export function StudioPanel(props: StudioPanelProps) {
   const [annotations, setAnnotations] = useState<Annotation[]>(loadAnnotations)
   const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [backups, setBackups] = useState<string[]>([])
+  const [selectedBackup, setSelectedBackup] = useState<string | null>(null)
+  const [backupContent, setBackupContent] = useState<string | null>(null)
 
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const editTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -92,6 +107,9 @@ export function StudioPanel(props: StudioPanelProps) {
 
   const currentKind = currentFile === null ? null : kindOfPath(currentFile)
   const srcdoc = useMemo(() => previewDocument(preview), [preview])
+  const diff = useMemo(() =>
+    selectedBackup === null || backupContent === null ? null : diffLines(backupContent, content),
+  [selectedBackup, backupContent, content])
 
   const postToFrame = useCallback((message: unknown) => {
     iframeRef.current?.contentWindow?.postMessage(message, '*')
@@ -179,6 +197,21 @@ export function StudioPanel(props: StudioPanelProps) {
     }).catch(() => { /* version is best-effort */ })
     return () => { cancelled = true }
   }, [currentFile, sessionId, listArtifacts])
+
+  // Load the open file's pre-overwrite backups (version history, newest first).
+  useEffect(() => {
+    setSelectedBackup(null)
+    setBackupContent(null)
+    if (cwd === undefined || currentFile === null || kindOfPath(currentFile) === 'image') {
+      setBackups([])
+      return
+    }
+    let cancelled = false
+    listBackups(cwd, currentFile)
+      .then(next => { if (!cancelled) setBackups(next.slice().reverse()) })
+      .catch(() => { if (!cancelled) setBackups([]) })
+    return () => { cancelled = true }
+  }, [cwd, currentFile, listBackups])
 
   /** Re-read the open file from disk (manual refresh). */
   const refresh = useCallback(async () => {
@@ -315,6 +348,35 @@ export function StudioPanel(props: StudioPanelProps) {
       setError(reason instanceof Error ? reason.message : String(reason))
     }
   }, [cwd, currentFile, restorePrevious, openFile])
+
+  /** Load one historical backup's content for the before/after diff view. */
+  const selectBackup = useCallback(async (backupPath: string) => {
+    if (cwd === undefined) return
+    setSelectedBackup(backupPath)
+    try {
+      setBackupContent(await readFile(cwd, backupPath))
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    }
+  }, [cwd, readFile])
+
+  /** Restore the selected historical backup over the open file. */
+  const restoreBackupVersion = useCallback(async () => {
+    if (cwd === undefined || currentFile === null || selectedBackup === null) return
+    try {
+      const result = await restoreBackup(cwd, currentFile, selectedBackup)
+      if (!result.restored) {
+        setError('恢复失败')
+        return
+      }
+      setSelectedBackup(null)
+      setBackupContent(null)
+      await openFile(currentFile)
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    }
+  }, [cwd, currentFile, selectedBackup, restoreBackup, openFile])
 
   /** Submit the current annotation back to the agent session. */
   const submitNote = useCallback(async () => {
@@ -511,7 +573,25 @@ export function StudioPanel(props: StudioPanelProps) {
               ? <div className={styles.emptyState}>选择文件后在此编辑源码</div>
               : currentKind === 'image'
                 ? <div className={styles.emptyState}>图片文件（无源码编辑）</div>
-                : <CodeEditor value={content} onChange={onEdit} placeholder="在此编辑源码" onSelectionChange={setTextSelection} />)}
+                : selectedBackup !== null && backupContent !== null && diff !== null
+                  ? (
+                    <div className={styles.diffView}>
+                      <div className={styles.diffHeader}>
+                        <span className={styles.diffTitle}>对比历史版本</span>
+                        <button type="button" className={styles.btn} onClick={() => { setSelectedBackup(null); setBackupContent(null) }}>返回编辑</button>
+                        <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => void restoreBackupVersion()}>恢复此版本</button>
+                      </div>
+                      <div className={styles.diffBody}>
+                        {diff.map((line, index) => (
+                          <div key={index} className={line.type === 'add' ? styles.diffAdd : line.type === 'remove' ? styles.diffRemove : styles.diffContext}>
+                            <span className={styles.diffSign}>{line.type === 'add' ? '+' : line.type === 'remove' ? '-' : ' '}</span>
+                            <span className={styles.diffText}>{line.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                  : <CodeEditor value={content} onChange={onEdit} placeholder="在此编辑源码" onSelectionChange={setTextSelection} />)}
           </div>
 
           <div className={styles.codeDivider}>
@@ -646,6 +726,28 @@ export function StudioPanel(props: StudioPanelProps) {
                   </button>
                 </div>
               ))}
+            </div>
+
+            <div className={styles.section}>
+              <div className={styles.sectionTitle}>版本历史（{backups.length}）</div>
+              {currentFile === null || currentKind === 'image' ? (
+                <div className={styles.kv}>打开 HTML/SVG/文本文件后查看版本历史</div>
+              ) : backups.length === 0 ? (
+                <div className={styles.kv}>暂无历史版本（保存后生成）</div>
+              ) : backups.map(backup => {
+                const ts = backupTimestamp(backup)
+                const active = backup === selectedBackup
+                return (
+                  <button
+                    key={backup}
+                    type="button"
+                    className={active ? `${styles.backupItem} ${styles.backupItemActive}` : styles.backupItem}
+                    onClick={() => void selectBackup(backup)}
+                  >
+                    {ts === null ? '未知时间' : formatBackupTime(ts)}
+                  </button>
+                )
+              })}
             </div>
           </aside>
         </div>

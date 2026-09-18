@@ -556,6 +556,109 @@
   background: color-mix(in srgb, var(--vs-accent) 12%, transparent);
 }
 
+/* ── version history + diff view ─────────────────────────────────────────── */
+
+.backupItem {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--vs-border);
+  border-radius: 6px;
+  background: var(--vs-bg);
+  color: var(--vs-text);
+  cursor: pointer;
+  font-size: 11.5px;
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.backupItem:hover {
+  background: var(--vs-bg-hover);
+}
+
+.backupItemActive {
+  border-color: var(--vs-accent);
+  background: var(--vs-accent-soft);
+  color: var(--vs-accent);
+}
+
+.diffView {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.diffHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--vs-border);
+  background: var(--vs-bg);
+  flex: none;
+}
+
+.diffTitle {
+  font-weight: 600;
+  font-size: 12px;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+
+.diffBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 12px;
+  line-height: 18px;
+  padding: 8px 0;
+}
+
+.diffAdd,
+.diffRemove,
+.diffContext {
+  display: flex;
+  white-space: pre;
+  min-height: 18px;
+  padding: 0 10px;
+}
+
+.diffAdd {
+  background: rgba(46, 160, 67, 0.14);
+  color: #1a7f37;
+}
+
+.diffRemove {
+  background: rgba(211, 56, 56, 0.12);
+  color: #d33838;
+}
+
+.diffContext {
+  color: var(--vs-text-secondary);
+}
+
+.diffSign {
+  flex: none;
+  width: 16px;
+  text-align: center;
+  user-select: none;
+}
+
+.diffText {
+  white-space: pre;
+}
+
+@media (prefers-color-scheme: dark) {
+  .diffAdd { color: #7ccf92; }
+  .diffRemove { color: #f0a06b; }
+}
+
 /* ── artifacts bar (above the composer) ──────────────────────────────────── */
 
 .artifactsBar {

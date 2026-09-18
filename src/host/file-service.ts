@@ -172,8 +172,27 @@ export async function listBackups(root: string, path: string): Promise<string[]>
 }
 
 /**
- * Restore the most recent backup over the file, keeping a fresh backup of the
- * current content first.
+ * Restore one specific backup over the file, keeping a fresh backup of the
+ * current content first. The backup must be a sibling backup of the target.
+ * @param root - absolute workspace root.
+ * @param path - absolute target file path.
+ * @param backupPath - absolute backup path to restore.
+ * @returns whether the backup was restored, plus the backup path used.
+ */
+export async function restoreBackup(root: string, path: string, backupPath: string): Promise<{ restored: boolean; backup?: string }> {
+  const target = assertWithinWorkspace(root, path)
+  const backup = assertWithinWorkspace(root, backupPath)
+  const prefix = `${basename(target)}${BACKUP_MARKER}`
+  if (!basename(backup).startsWith(prefix)) {
+    throw new WorkspacePathError(backupPath, `not a backup of ${target}`)
+  }
+  const content = await readFile(backup, 'utf8')
+  await writeSourceFile(root, target, content)
+  return { restored: true, backup }
+}
+
+/**
+ * Restore the most recent backup over the file.
  * @param root - absolute workspace root.
  * @param path - absolute target file path.
  * @returns whether a backup was restored, plus the backup path used.
@@ -181,10 +200,7 @@ export async function listBackups(root: string, path: string): Promise<string[]>
 export async function restorePrevious(root: string, path: string): Promise<{ restored: boolean; backup?: string }> {
   const backups = await listBackups(root, path)
   if (backups.length === 0) return { restored: false }
-  const latest = backups[backups.length - 1] as string
-  const content = await readFile(latest, 'utf8')
-  await writeSourceFile(root, path, content)
-  return { restored: true, backup: latest }
+  return await restoreBackup(root, path, backups[backups.length - 1] as string)
 }
 
 /** Fold a thrown error into a failure result with a valid RPC error code. */
@@ -207,7 +223,8 @@ function parseTarget(payload: unknown): { root: string; path: string } {
 
 /**
  * Build the `/visual-studio` Connection RPC handler. Endpoints: `list`, `read`,
- * `write`, `create`. Every business error folds into a failure result; the
+ * `readBytes`, `write`, `create`, `artifacts.list`, `backups.list`,
+ * `backups.restore`. Every business error folds into a failure result; the
  * handler never throws.
  * @returns a Connection RPC handler over workspace source files.
  */
@@ -242,9 +259,17 @@ export function createStudioHandler(registry?: ArtifactRegistry): ConnectionRpcH
           const artifacts = registry === undefined ? [] : registry.list(sessionId)
           return { ok: true, value: { artifacts } }
         }
+        case 'backups.list': {
+          const { root, path } = parseTarget(payload)
+          return { ok: true, value: { backups: await listBackups(root, path) } }
+        }
         case 'backups.restore': {
           const { root, path } = parseTarget(payload)
-          return { ok: true, value: await restorePrevious(root, path) }
+          const backup = (payload as { backup?: unknown }).backup
+          const result = typeof backup === 'string'
+            ? await restoreBackup(root, path, backup)
+            : await restorePrevious(root, path)
+          return { ok: true, value: result }
         }
         default:
           return { ok: false, error: { code: 'internal', message: `unknown visual-studio endpoint: ${endpoint}`, details: {} } }

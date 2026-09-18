@@ -71,6 +71,10 @@ export interface StudioInjected {
   createFile(root: string, path: string): Promise<string>
   /** Restore the most recent pre-overwrite backup over the file. */
   restorePrevious(root: string, path: string): Promise<{ restored: boolean }>
+  /** List a file's pre-overwrite backups (absolute paths, oldest first). */
+  listBackups(root: string, path: string): Promise<string[]>
+  /** Restore one specific backup over the file. */
+  restoreBackup(root: string, path: string, backupPath: string): Promise<{ restored: boolean }>
   /** Send the annotation text to the current agent session as a user message. */
   submitAnnotation(sessionId: string, text: string): Promise<boolean>
   /** List the current session's deliverable artifacts. */
